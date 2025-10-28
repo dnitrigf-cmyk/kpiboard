@@ -73,6 +73,48 @@
 
   // Офлайн-кэш Firestore (не страшно, если уже включён)
   enableIndexedDbPersistence(db).catch(() => {});
+// ===== Справочники (департаменты и должности) =====
+const DEPARTMENTS = [
+  "Administration",
+  "Accounting",
+  "Dispatching"
+];
+
+const POSITIONS_BY_DEPT = {
+  "Administration": [
+    "Director",
+    "Team Leader",
+    "Driver Evaluator",
+    "Capacity Planner",
+    "Driver Manager",
+    "Driver Administrator"
+  ],
+  "Accounting": [
+    "Team Leader",
+    "Manager",
+    "Payroll"
+  ],
+  "Dispatching": [
+    "Team Leader",
+    "Dispo FTL",
+    "Dispo XTL/ODC"
+  ]
+};
+
+// Какие должности получают расширенные права
+const DIRECTOR_POSITIONS = ["Director"];
+const LEADER_POSITIONS   = ["Team Leader"];
+
+// Утилиты для выпадающих списков и определения роли
+function buildOptions(list, placeholder) {
+  return `<option value="" disabled selected>${placeholder}</option>` +
+         list.map(v => `<option value="${v}">${v}</option>`).join("");
+}
+function roleFromPosition(position){
+  if (DIRECTOR_POSITIONS.includes(position)) return "director";
+  if (LEADER_POSITIONS.includes(position))   return "leader";
+  return "member";
+}
 
   // Пробрасываем в глобал для app.js
   window.__FB_AUTH = auth;
@@ -83,44 +125,93 @@
   window.__fbSnap   = onSnapshot;
   window.__fbLogout = async () => { try { await signOut(auth); } catch(e){ alert("Logout error: "+e.message); } };
 
-  // ==== Мини-окно Вход / Регистрация ====
-  window.showLoginScreen = function() {
-    if (document.querySelector('#authBox')) return;
-    const box = document.createElement('div');
-    box.id = 'authBox';
-    box.style = "position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:100000;background:rgba(2,6,10,0.7)";
-    box.innerHTML = `
-      <div style="width:360px;background:#0f1620;border:1px solid #223;padding:20px;border-radius:12px;color:#e8eef5;box-shadow:0 10px 40px rgba(0,0,0,.5)">
-        <h3 style="margin-top:0">KPI Board — Вход / Регистрация</h3>
-        <input id="authEmail" type="email" placeholder="Email" style="width:100%;padding:10px;border-radius:8px;margin-bottom:8px;background:#0f1824;border:1px solid #2b3648;color:#e8eef5"/>
-        <input id="authPass"  type="password" placeholder="Пароль" style="width:100%;padding:10px;border-radius:8px;margin-bottom:8px;background:#0f1824;border:1px solid #2b3648;color:#e8eef5"/>
-        <div style="display:flex;gap:8px;justify-content:flex-end">
-          <button id="btnLogin" style="padding:8px 12px;border-radius:8px">Войти</button>
-          <button id="btnRegister" style="padding:8px 12px;border-radius:8px">Регистрация</button>
-        </div>
-        <div style="margin-top:8px;font-size:12px;color:#a8b6c9">После входа окно закроется и загрузится общая база KPI.</div>
+  window.showLoginScreen = function(){
+  if (document.querySelector('#authBox')) return;
+  const box = document.createElement('div');
+  box.id = 'authBox';
+  box.style = "position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:100000;background:rgba(2,6,10,0.7)";
+  box.innerHTML = `
+    <div style="width:460px;background:#0f1620;border:1px solid #223;padding:20px;border-radius:12px;color:#e8eef5;box-shadow:0 10px 40px rgba(0,0,0,.5)">
+      <h3 style="margin-top:0">KPI Board — Вход / Регистрация</h3>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <input id="authFirst"  type="text" placeholder="First name"  style="grid-column:1/2;padding:10px;border-radius:8px;background:#0f1824;border:1px solid #2b3648;color:#e8eef5"/>
+        <input id="authLast"   type="text" placeholder="Last name"   style="grid-column:2/3;padding:10px;border-radius:8px;background:#0f1824;border:1px solid #2b3648;color:#e8eef5"/>
+
+        <select id="authDept"  style="grid-column:1/3;padding:10px;border-radius:8px;background:#0f1824;border:1px solid #2b3648;color:#e8eef5"></select>
+        <select id="authPos"   style="grid-column:1/3;padding:10px;border-radius:8px;background:#0f1824;border:1px solid #2b3648;color:#e8eef5"></select>
+
+        <input id="authEmail"  type="email"    placeholder="Email"   style="grid-column:1/3;padding:10px;border-radius:8px;background:#0f1824;border:1px solid #2b3648;color:#e8eef5"/>
+        <input id="authPass"   type="password" placeholder="Password"style="grid-column:1/3;padding:10px;border-radius:8px;background:#0f1824;border:1px solid #2b3648;color:#e8eef5"/>
       </div>
-    `;
-    document.body.appendChild(box);
 
-    box.querySelector('#btnRegister').onclick = async () => {
-      const email = box.querySelector('#authEmail').value.trim();
-      const pass  = box.querySelector('#authPass').value;
-      try { await createUserWithEmailAndPassword(auth, email, pass); }
-      catch(err){ alert('Ошибка регистрации: ' + err.message); }
-    };
-    box.querySelector('#btnLogin').onclick = async () => {
-      const email = box.querySelector('#authEmail').value.trim();
-      const pass  = box.querySelector('#authPass').value;
-      try { await signInWithEmailAndPassword(auth, email, pass); }
-      catch(err){ alert('Ошибка входа: ' + err.message); }
-    };
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
+        <button id="btnLogin"     style="padding:8px 12px;border-radius:8px">Войти</button>
+        <button id="btnRegister"  style="padding:8px 12px;border-radius:8px">Регистрация</button>
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:#a8b6c9">
+        При регистрации вы будете добавлены в выбранный департамент.
+      </div>
+    </div>
+  `;
+  document.body.appendChild(box);
+
+  // Заполняем выпадающие списки
+  const selDept  = box.querySelector('#authDept');
+  const selPos   = box.querySelector('#authPos');
+  selDept.innerHTML = buildOptions(DEPARTMENTS, "Select department");
+  selPos.innerHTML  = buildOptions([], "Select position");
+  selDept.onchange = () => {
+    const list = POSITIONS_BY_DEPT[selDept.value] || [];
+    selPos.innerHTML = buildOptions(list, "Select position");
   };
 
-  window.hideLoginScreen = function(){
-    const el = document.querySelector('#authBox');
-    if (el) el.remove();
+  // Регистрация
+  box.querySelector('#btnRegister').onclick = async () => {
+    const first = box.querySelector('#authFirst').value.trim();
+    const last  = box.querySelector('#authLast').value.trim();
+    const dept  = selDept.value;
+    const pos   = selPos.value;
+    const email = box.querySelector('#authEmail').value.trim();
+    const pass  = box.querySelector('#authPass').value;
+
+    if (!first || !last || !dept || !pos || !email || !pass){
+      alert("Заполните все поля"); return;
+    }
+
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email, pass);
+      const uid  = cred.user.uid;
+      const displayName = `${first} ${last}`;
+      const role = roleFromPosition(pos);
+
+      // Профиль в Firestore: users/{uid}
+      await setDoc(doc(db, "users", uid), {
+        displayName,
+        email,
+        department: dept,
+        position: pos,
+        role,
+        createdAt: Date.now()
+      });
+
+      // Сохраним в глобал — app.js будет использовать
+      window.currentUserProfile = { displayName, email, department: dept, position: pos, role };
+
+      alert("Регистрация успешна!");
+    } catch(err){
+      alert("Ошибка регистрации: " + err.message);
+    }
   };
+
+  // Вход
+  box.querySelector('#btnLogin').onclick = async () => {
+    const email = box.querySelector('#authEmail').value.trim();
+    const pass  = box.querySelector('#authPass').value;
+    try { await signInWithEmailAndPassword(auth, email, pass); }
+    catch(err){ alert('Ошибка входа: ' + err.message); }
+  };
+};
 
   // Транслируем изменение авторизации в приложение
   onAuthStateChanged(auth, (user) => {
