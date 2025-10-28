@@ -1,7 +1,7 @@
 // sw.js — PWA cache (GET only)
 // ВАЖНО: кэшируем только статику и HTML. Никаких POST/Firestore в кэше.
 
-const CACHE_NAME = 'kpi-cache-v4';
+const CACHE_NAME = 'kpi-cache-v5';
 
 // Что положить в предзагрузку (по нужде дополни своими файлами/иконками)
 const PRECACHE = [
@@ -110,3 +110,4 @@ self.addEventListener('fetch', (event) => {
   // Хотим — можно сделать "stale-while-revalidate" аналогично пункту (4).
   // По умолчанию: не перехватываем.
 });
+
