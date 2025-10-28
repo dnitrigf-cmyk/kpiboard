@@ -213,10 +213,32 @@ function roleFromPosition(position){
   };
 };
 
-  // Транслируем изменение авторизации в приложение
-  onAuthStateChanged(auth, (user) => {
-    window.dispatchEvent(new CustomEvent('fbAuthChanged', { detail: user || null }));
-  });
+  import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+async function loadUserProfile(uid){
+  try{
+    const snap = await getDoc(doc(db, "users", uid));
+    if (snap.exists()) {
+      window.currentUserProfile = snap.data();
+    } else {
+      window.currentUserProfile = null;
+      console.warn("Профиль не найден для uid:", uid);
+    }
+  }catch(e){
+    console.error("Ошибка загрузки профиля:", e);
+    window.currentUserProfile = null;
+  }
+}
+
+onAuthStateChanged(auth, async (user) => {
+  if (user) {
+    await loadUserProfile(user.uid);
+  } else {
+    window.currentUserProfile = null;
+  }
+  window.dispatchEvent(new CustomEvent('fbAuthChanged', { detail: user || null }));
+});
+
 </script>
 
 <!-- ==== Основное приложение ==== -->
