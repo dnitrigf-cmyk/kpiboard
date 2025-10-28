@@ -115,7 +115,6 @@ function defaultBoard(){
 let __unsubRT = null;
 let __isLocalSave = false;
 
-
 function migrateLegacyBoardFormat(board){
   board.rows.forEach(r=>{
     if (Array.isArray(r.values)){
@@ -257,29 +256,41 @@ async function ensureUserFromProfile(){
     }
   }
 }
-function canEditUser(targetDept, targetUserName){
-  const prof = window.currentUserProfile;
-  if (!prof) return false;
 
-  // Director — может всё
-  if (prof.role === "director") return true;
+// ---------- Roles / Permissions ----------
+function isSuper(){ return (window.currentUserProfile?.role === "super"); }
 
-  // Team Leader — может в своём департаменте
-  if (prof.role === "leader" && prof.department === targetDept) return true;
-
-  // Обычный — только сам себя в своём департаменте
-  if (prof.role === "member" && prof.department === targetDept && targetUserName === prof.displayName) return true;
-
-  return false;
-}
-// ---- Новая функция для прав на управление департаментом ----
 function canManageDept(targetDept){
   const prof = window.currentUserProfile;
   if (!prof) return false;
+  if (isSuper()) return true;
   if (prof.role === "director") return true;
   if (prof.role === "leader" && prof.department === targetDept) return true;
   return false; // member — нет прав
 }
+
+// редактирование значений KPI (дни) — своё, лидер в департаменте, директор/супер везде
+function canEditUser(targetDept, targetUserName){
+  const prof = window.currentUserProfile;
+  if (!prof) return false;
+  if (isSuper()) return true;
+  if (prof.role === "director") return true;
+  if (prof.role === "leader" && prof.department === targetDept) return true;
+  if (prof.role === "member" && prof.department === targetDept && targetUserName === prof.displayName) return true;
+  return false;
+}
+
+// управление структурой KPI (добавить/переименовать/менять Target/удалять)
+function canManageKpi(targetDept){
+  const prof = window.currentUserProfile;
+  if (!prof) return false;
+  if (isSuper()) return true;
+  if (prof.role === "director") return true;
+  if (prof.role === "leader" && prof.department === targetDept) return true;
+  return false;
+}
+function canAddKpi(targetDept){ return canManageKpi(targetDept); }
+function canDeleteKpi(targetDept){ return canManageKpi(targetDept); }
 
 function startRealtime(){
   const FB_DB = window.__FB_DB;
@@ -304,7 +315,6 @@ function startRealtime(){
     }
   });
 }
-
 
 // ---------- Range helpers ----------
 function currentDateRange(){
@@ -443,9 +453,9 @@ function ensureDeptSelector(){
     chip.addEventListener("contextmenu", (e)=>{
       e.preventDefault();
       openContextMenu([
-        {label:"Rename Department", action: ()=>openRenameDeptModal(d)},
-        {label:"Delete Department", action: ()=>deleteDepartment(d), danger:true},
-        {label:"Add Department",    action: openAddDeptModal},
+        {label:"Rename Department", action: ()=> canManageDept(d) ? openRenameDeptModal(d) : alert("Недостаточно прав")},
+        {label:"Delete Department", action: ()=> canManageDept(d) ? deleteDepartment(d) : alert("Недостаточно прав"), danger:true},
+        {label:"Add Department",    action: ()=> canManageDept(d) ? openAddDeptModal() : alert("Недостаточно прав")},
       ], e.pageX, e.pageY);
     });
 
@@ -465,11 +475,10 @@ function switchDepartment(d){
   save(); renderUsers(); renderTable();
 }
 function deleteDepartment(deptName){
-   if (!canManageDept(deptName)) {
-  alert("Недостаточно прав для удаления департамента.");
-  return;
-}
-
+  if (!canManageDept(deptName)) {
+    alert("Недостаточно прав для удаления департамента.");
+    return;
+  }
   const depts = Object.keys(orgData.departments);
   if (depts.length <= 1){
     alert("You cannot delete the last department.");
@@ -507,37 +516,35 @@ function renderTable(){
   board.rows.forEach((row, rIdx) => {
     const tr = document.createElement("tr");
 
-    // KPI name — RMB inline rename/delete
+    // KPI name — RMB inline rename/delete (только у тех, у кого есть права управлять KPI)
     const thName = document.createElement("th");
     thName.className = "col-kpi editable";
     thName.textContent = row.name;
     thName.addEventListener("contextmenu", (e) => {
-  e.preventDefault();
-  if (!canEditUser(currentDepartment, currentUser)) {
-    alert("Недостаточно прав");
-    return;
-  }
-  openContextMenu([
-    {label:"Rename", action: () => inlineRenameRowCell(thName, rIdx)},
-    {label:"Delete", action: () => deleteRow(rIdx), danger:true},
-  ], e.pageX, e.pageY);
-});
-
+      e.preventDefault();
+      if (!canManageKpi(currentDepartment)) {
+        alert("Недостаточно прав");
+        return;
+      }
+      openContextMenu([
+        {label:"Rename", action: () => inlineRenameRowCell(thName, rIdx)},
+        {label:"Delete", action: () => deleteRow(rIdx), danger:true},
+      ], e.pageX, e.pageY);
+    });
     tr.appendChild(thName);
 
-    // Target — RMB edit
+    // Target — RMB edit (только менеджеры KPI)
     const tdTarget = document.createElement("td");
     tdTarget.className = "col-target editable";
     tdTarget.textContent = row.target;
     tdTarget.addEventListener("contextmenu", (e) => {
-  e.preventDefault();
-  if (!canEditUser(currentDepartment, currentUser)) {
-    alert("Недостаточно прав");
-    return;
-  }
-  makeEditableField(tdTarget, row, "target");
-});
-
+      e.preventDefault();
+      if (!canManageKpi(currentDepartment)) {
+        alert("Недостаточно прав");
+        return;
+      }
+      makeEditableField(tdTarget, row, "target");
+    });
     tr.appendChild(tdTarget);
 
     if (viewLevel === "month"){
@@ -569,14 +576,13 @@ function renderTable(){
         td.appendChild(wrap);
         paintCellProgress(wrap, val);
         td.addEventListener("contextmenu", (e)=>{
-  e.preventDefault();
-  if (!canEditUser(currentDepartment, currentUser)) {
-    alert("У вас нет прав редактировать этот KPI");
-    return;
-  }
-  makeEditableDate(td, row, key);
-});
-
+          e.preventDefault();
+          if (!canEditUser(currentDepartment, currentUser)) {
+            alert("У вас нет прав редактировать этот KPI");
+            return;
+          }
+          makeEditableDate(td, row, key);
+        });
         tr.appendChild(td);
       });
     }
@@ -712,9 +718,16 @@ function openContextMenu(items, x, y){
 
 // ---------- KPI row ops ----------
 function deleteRow(rIdx){
+  if (!canDeleteKpi(currentDepartment)) {
+    alert("У вас нет прав на удаление KPI.");
+    return;
+  }
   const board = orgData.departments[currentDepartment].users[currentUser].board;
-  if (!confirm("Delete this KPI row?")) return;
+  const row = board.rows[rIdx];
+  if (!row) return;
+  if (!confirm(`Delete KPI "${row.name}"?`)) return;
   board.rows.splice(rIdx, 1);
+  selectedRow = -1;
   save(); renderTable();
 }
 
@@ -731,13 +744,16 @@ function renderUsers() {
 
     btn.onclick = () => { currentUser = name; renderUsers(); renderTable(); };
 
-    btn.addEventListener("contextmenu", (e)=>{
-      e.preventDefault();
-      openContextMenu([
-        {label:"Rename", action: ()=>openRenameUserModal(name)},
-        {label:"Delete", action: ()=>deleteUser(name), danger:true},
-      ], e.pageX, e.pageY);
-    });
+    // контекстное меню только для управляющих департаментом
+    if (canManageDept(currentDepartment)) {
+      btn.addEventListener("contextmenu", (e)=>{
+        e.preventDefault();
+        openContextMenu([
+          {label:"Rename", action: ()=>openRenameUserModal(name)},
+          {label:"Delete", action: ()=>deleteUser(name), danger:true},
+        ], e.pageX, e.pageY);
+      });
+    }
 
     container.appendChild(btn);
   });
@@ -745,10 +761,10 @@ function renderUsers() {
   renderSidebar();
 }
 function deleteUser(name){
-   if (!canManageDept(currentDepartment)) {
-  alert("Недостаточно прав для удаления пользователей.");
-  return;
-}
+  if (!canManageDept(currentDepartment)) {
+    alert("Недостаточно прав для удаления пользователей.");
+    return;
+  }
   const users = orgData.departments[currentDepartment].users;
   if (!confirm(`Delete user "${name}" and all his data?`)) return;
   const rest = Object.keys(users).filter(k=>k!==name);
@@ -802,12 +818,13 @@ function ensureAppMenuButton(headerEl){
     floatBtn.addEventListener("click", (e)=>{
       e.stopPropagation();
       const r = floatBtn.getBoundingClientRect();
-      openContextMenu([
-        {label:"Add User",       action: addUserFromMenu},
-        {label:"Add KPI",        action: addKpiFromMenu},
-        {label:"Add Department", action: openAddDeptModal},
+      const menuItems = [
+        {label:"Add User",       action: canManageDept(currentDepartment) ? addUserFromMenu : null},
+        {label:"Add KPI",        action: canAddKpi(currentDepartment) ? addKpiFromMenu : null},
+        {label:"Add Department", action: canManageDept(currentDepartment) ? openAddDeptModal : null},
         {label:"Logout",         action: ()=>window.__fbLogout && window.__fbLogout()},
-      ], r.right, r.bottom+6);
+      ].filter(i => i.action);
+      openContextMenu(menuItems, r.right, r.bottom+6);
     });
     return;
   }
@@ -836,23 +853,17 @@ function ensureAppMenuButton(headerEl){
   btn.addEventListener("click", (e)=>{
     e.stopPropagation();
     const r = btn.getBoundingClientRect();
-    const prof = window.currentUserProfile || {};
-const canManage = canManageDept(currentDepartment);
-const canEdit   = canEditUser(currentDepartment, currentUser);
-
-const menuItems = [
-  {label:"Add User",       action: canManage ? addUserFromMenu : null},
-  {label:"Add KPI",        action: canEdit ? addKpiFromMenu : null},
-  {label:"Add Department", action: prof.role === "director" ? openAddDeptModal : null},
-  {label:"Logout",         action: ()=>window.__fbLogout && window.__fbLogout()},
-].filter(i => i.action);
-
-openContextMenu(menuItems, r.right, r.bottom+6);
-
+    const menuItems = [
+      {label:"Add User",       action: canManageDept(currentDepartment) ? addUserFromMenu : null},
+      {label:"Add KPI",        action: canAddKpi(currentDepartment) ? addKpiFromMenu : null},
+      {label:"Add Department", action: canManageDept(currentDepartment) ? openAddDeptModal : null},
+      {label:"Logout",         action: ()=>window.__fbLogout && window.__fbLogout()},
+    ].filter(i => i.action);
+    openContextMenu(menuItems, r.right, r.bottom+6);
   }, { once:false });
 }
 function addKpiFromMenu(){
-  if (!canEditUser(currentDepartment, currentUser)) {
+  if (!canAddKpi(currentDepartment)) {
     alert("Недостаточно прав для добавления KPI.");
     return;
   }
@@ -868,7 +879,6 @@ function addUserFromMenu(){
   }
   openAddUserModal();
 }
-
 
 // ---------- Sidebar (left) ----------
 function renderSidebar(){
@@ -1144,10 +1154,10 @@ function openRenameUserModal(oldName){
 
 // ---------- Modal: Add Department ----------
 function openAddDeptModal(){
-   if (!canManageDept(currentDepartment)) {
-  alert("Недостаточно прав для добавления департамента.");
-  return;
-}
+  if (!canManageDept(currentDepartment)) {
+    alert("Недостаточно прав для добавления департамента.");
+    return;
+  }
 
   const root = ensureModalRoot();
   root.classList.add("active");
@@ -1209,10 +1219,10 @@ function openAddDeptModal(){
 
 // ---------- Modal: Rename Department ----------
 function openRenameDeptModal(initialName){
-   if (!canManageDept(currentDepartment)) {
-  alert("Недостаточно прав для переименования департамента.");
-  return;
-}
+  if (!canManageDept(currentDepartment)) {
+    alert("Недостаточно прав для переименования департамента.");
+    return;
+  }
 
   const dept = initialName || currentDepartment;
   const root = ensureModalRoot();
@@ -1308,12 +1318,8 @@ window.addEventListener('fbAuthChanged', async (e) => {
   }
 });
 
-
-
 if (window.__FB_AUTH && window.__FB_AUTH.currentUser) {
   window.dispatchEvent(new CustomEvent('fbAuthChanged', { detail: window.__FB_AUTH.currentUser }));
 } else {
   window.showLoginScreen && window.showLoginScreen();
 }
-
-
