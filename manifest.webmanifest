@@ -1,0 +1,15 @@
+{
+  "name": "KPI Board",
+  "short_name": "KPI",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0f1115",
+  "theme_color": "#131722",
+  "icons": [
+    {
+      "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAYAAADDPmHLAAAABGdBTUEAALGPC/xhBQAAACBjSFJNAAB6JgAAgIQAAPoAAACA6AAAdTAAAOpgAAA6mAAAF3CculE8AAABu0lEQVR4nO3aMW7CQBSE4f+2y0F6Vg3fC2o6rNQ7r0XyJH3wWm2i8h7C3Qm4y6Y4yG7z0C3k7m8wQAAAAAAAAAAAAAAAAAAAB8l9k5mYcZr0cUe0y5Wl3v4k1NQJP+1m0yq3l2vX1R1mY8e8qj6xkq8e8k2GqT1p1m3gYbqQ0p8bqk0g9qYx8c9H1QxkqvG8wzKj7wQ2vJ5Fh8rj4h0b8rj5g0v8qj6wJ/6ZJ5fC8y2j7mW6Y9Yz1m3mY5b8Tzv1zET6rj4Wytp8mB5f3mWv6r5i8vnaAAAAAAAAAAAAAAAAAAAA4G0b2wB1mK2b3m8C3m1o2r4k1Pp7wq9nJ6Cq2lqY7wX9C5v9N0WgV9Nq3cX0M6Xr0Jm8m0k2cQ0bY0xw9p6t9mYV2Xk3k0m8g0cY0mQ8AAAAAAH4i9wT6r2mQh4X6mN0AAAAAElFTkSuQmCC",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
