@@ -1,5 +1,5 @@
 // sw.js — улучшенный минимальный для PWA
-const CACHE_NAME = "kpi-board-v3";
+const CACHE_NAME = "kpi-board-v4";
 const ASSETS = [
   "./",
   "./index.html",
@@ -30,4 +30,5 @@ self.addEventListener("fetch", (e) => {
     caches.match(e.request).then((response) => response || fetch(e.request))
   );
 });
+
 
