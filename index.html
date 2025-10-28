@@ -1,9 +1,9 @@
-<!doctype html>
-<html lang="ru">
-<head>
-  <meta charset="utf-8" />
+ <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>KPI Board (Online Shared)</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#131722">
 
   <!-- Стили и иконки -->
   <link rel="stylesheet" href="styles.css" />
@@ -12,27 +12,6 @@
   <meta name="theme-color" content="#131722" />
 </head>
 
-<body>
-  <header>
-    <h1>KPI Board</h1>
-    <span class="tag">Firebase Shared</span>
-  </header>
-<!doctype html>
-<html lang="ru">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>KPI Board (Online Shared)</title>
-
-  <!-- Стили и PWA -->
-  <link rel="stylesheet" href="styles.css" />
-  <link rel="manifest" href="manifest.webmanifest">
-  <meta name="theme-color" content="#131722">
-
-  <!-- Явный фавикон, чтобы не было 404 -->
-  <!-- Положи icons/icon-192.png в репозиторий (мы уже создавали этот файл ранее) -->
-  <link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
-</head>
 <body>
 <header>
   <h1>KPI Board</h1>
@@ -72,18 +51,12 @@
 <!-- ==== Firebase + Auth + Firestore (единственный модульный скрипт) ==== -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import {
-    getAuth, onAuthStateChanged, signInWithEmailAndPassword,
-    createUserWithEmailAndPassword, signOut
+  import { 
+    getAuth, onAuthStateChanged, signInWithEmailAndPassword, 
+    createUserWithEmailAndPassword, signOut 
   } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-
-  /* ВАЖНО: используем initializeFirestore и кэш, без enableIndexedDbPersistence */
-  import {
-    initializeFirestore,
-    persistentLocalCache,
-    persistentMultipleTabManager,
-    memoryLocalCache,
-    doc, getDoc, setDoc, onSnapshot
+  import { 
+    getFirestore, doc, getDoc, setDoc, onSnapshot, enableIndexedDbPersistence 
   } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
   // Конфиг твоего проекта
@@ -99,38 +72,52 @@
   // Init
   const app  = initializeApp(firebaseConfig);
   const auth = getAuth(app);
+  const db   = getFirestore(app);
 
-  // Firestore с оффлайн-кэшем (мультивкладки). Если не получится — RAM кэш.
-  let db;
-  try {
-    db = initializeFirestore(app, {
-      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
-    });
-  } catch (e) {
-    db = initializeFirestore(app, { localCache: memoryLocalCache() });
-  }
+  // Офлайн-кэш Firestore (не страшно, если уже включён)
+  enableIndexedDbPersistence(db).catch(() => {});
+// ===== Справочники (департаменты и должности) =====
+const DEPARTMENTS = [
+  "Administration",
+  "Accounting",
+  "Dispatching"
+];
 
-  // ===== Справочники (департаменты и должности) =====
-  const DEPARTMENTS = [ "Administration", "Accounting", "Dispatching" ];
-  const POSITIONS_BY_DEPT = {
-    "Administration": [
-      "Director","Team Leader","Driver Evaluator","Capacity Planner","Driver Manager","Driver Administrator"
-    ],
-    "Accounting": ["Team Leader","Manager","Payroll"],
-    "Dispatching": ["Team Leader","Dispo FTL","Dispo XTL/ODC"]
-  };
-  const DIRECTOR_POSITIONS = ["Director"];
-  const LEADER_POSITIONS   = ["Team Leader"];
+const POSITIONS_BY_DEPT = {
+  "Administration": [
+    "Director",
+    "Team Leader",
+    "Driver Evaluator",
+    "Capacity Planner",
+    "Driver Manager",
+    "Driver Administrator"
+  ],
+  "Accounting": [
+    "Team Leader",
+    "Manager",
+    "Payroll"
+  ],
+  "Dispatching": [
+    "Team Leader",
+    "Dispo FTL",
+    "Dispo XTL/ODC"
+  ]
+};
 
-  function buildOptions(list, placeholder) {
-    return `<option value="" disabled selected>${placeholder}</option>` +
-           list.map(v => `<option value="${v}">${v}</option>`).join("");
-  }
-  function roleFromPosition(position){
-    if (DIRECTOR_POSITIONS.includes(position)) return "director";
-    if (LEADER_POSITIONS.includes(position))   return "leader";
-    return "member";
-  }
+// Какие должности получают расширенные права
+const DIRECTOR_POSITIONS = ["Director"];
+const LEADER_POSITIONS   = ["Team Leader"];
+
+// Утилиты для выпадающих списков и определения роли
+function buildOptions(list, placeholder) {
+  return `<option value="" disabled selected>${placeholder}</option>` +
+         list.map(v => `<option value="${v}">${v}</option>`).join("");
+}
+function roleFromPosition(position){
+  if (DIRECTOR_POSITIONS.includes(position)) return "director";
+  if (LEADER_POSITIONS.includes(position))   return "leader";
+  return "member";
+}
 
   // Пробрасываем в глобал для app.js
   window.__FB_AUTH = auth;
@@ -141,141 +128,28 @@
   window.__fbSnap   = onSnapshot;
   window.__fbLogout = async () => { try { await signOut(auth); } catch(e){ alert("Logout error: "+e.message); } };
 
-  // ==== Мини-окно Вход/Регистрация ====
   window.showLoginScreen = function(){
-    if (document.querySelector('#authBox')) return;
-    const box = document.createElement('div');
-    box.id = 'authBox';
-    box.style = "position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:100000;background:rgba(2,6,10,0.7)";
-    box.innerHTML = `
-      <div style="width:460px;background:#0f1620;border:1px solid #223;padding:20px;border-radius:12px;color:#e8eef5;box-shadow:0 10px 40px rgba(0,0,0,.5)">
-        <h3 style="margin-top:0">KPI Board — Вход / Регистрация</h3>
+  if (document.querySelector('#authBox')) return;
+  const box = document.createElement('div');
+  box.id = 'authBox';
+  box.style = "position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:100000;background:rgba(2,6,10,0.7)";
+  box.innerHTML = `
+    <div style="width:460px;background:#0f1620;border:1px solid #223;padding:20px;border-radius:12px;color:#e8eef5;box-shadow:0 10px 40px rgba(0,0,0,.5)">
+      <h3 style="margin-top:0">KPI Board — Вход / Регистрация</h3>
 
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <input id="authFirst"  type="text" placeholder="First name"  style="grid-column:1/2;padding:10px;border-radius:8px;background:#0f1824;border:1px solid #2b3648;color:#e8eef5"/>
-          <input id="authLast"   type="text" placeholder="Last name"   style="grid-column:2/3;padding:10px;border-radius:8px;background:#0f1824;border:1px solid #2b3648;color:#e8eef5"/>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <input id="authFirst"  type="text" placeholder="First name"  style="grid-column:1/2;padding:10px;border-radius:8px;background:#0f1824;border:1px solid #2b3648;color:#e8eef5"/>
+        <input id="authLast"   type="text" placeholder="Last name"   style="grid-column:2/3;padding:10px;border-radius:8px;background:#0f1824;border:1px solid #2b3648;color:#e8eef5"/>
 
-          <select id="authDept"  style="grid-column:1/3;padding:10px;border-radius:8px;background:#0f1824;border:1px solid #2b3648;color:#e8eef5"></select>
-          <select id="authPos"   style="grid-column:1/3;padding:10px;border-radius:8px;background:#0f1824;border:1px solid #2b3648;color:#e8eef5"></select>
+        <select id="authDept"  style="grid-column:1/3;padding:10px;border-radius:8px;background:#0f1824;border:1px solid #2b3648;color:#e8eef5"></select>
+        <select id="authPos"   style="grid-column:1/3;padding:10px;border-radius:8px;background:#0f1824;border:1px solid #2b3648;color:#e8eef5"></select>
 
-          <input id="authEmail"  type="email"    placeholder="Email"   style="grid-column:1/3;padding:10px;border-radius:8px;background:#0f1824;border:1px solid #2b3648;color:#e8eef5"/>
-          <input id="authPass"   type="password" placeholder="Password"style="grid-column:1/3;padding:10px;border-radius:8px;background:#0f1824;border:1px solid #2b3648;color:#e8eef5"/>
-        </div>
-
-        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
-          <button id="btnLogin"     style="padding:8px 12px;border-radius:8px">Войти</button>
-          <button id="btnRegister"  style="padding:8px 12px;border-radius:8px">Регистрация</button>
-        </div>
-        <div style="margin-top:8px;font-size:12px;color:#a8b6c9">
-          При регистрации вы будете добавлены в выбранный департамент.
-        </div>
-      </div>
-    `;
-    document.body.appendChild(box);
-
-    // Заполняем выпадающие списки
-    const selDept  = box.querySelector('#authDept');
-    const selPos   = box.querySelector('#authPos');
-    selDept.innerHTML = buildOptions(DEPARTMENTS, "Select department");
-    selPos.innerHTML  = buildOptions([], "Select position");
-    selDept.onchange = () => {
-      const list = POSITIONS_BY_DEPT[selDept.value] || [];
-      selPos.innerHTML = buildOptions(list, "Select position");
-    };
-
-    // Регистрация
-    box.querySelector('#btnRegister').onclick = async () => {
-      const first = box.querySelector('#authFirst').value.trim();
-      const last  = box.querySelector('#authLast').value.trim();
-      const dept  = selDept.value;
-      const pos   = selPos.value;
-      const email = box.querySelector('#authEmail').value.trim();
-      const pass  = box.querySelector('#authPass').value;
-
-      if (!first || !last || !dept || !pos || !email || !pass){
-        alert("Заполните все поля"); return;
-      }
-
-      try {
-        const cred = await createUserWithEmailAndPassword(auth, email, pass);
-        const uid  = cred.user.uid;
-        const displayName = `${first} ${last}`;
-        const role = roleFromPosition(pos);
-
-        await setDoc(doc(db, "users", uid), {
-          displayName, email, department: dept, position: pos, role, createdAt: Date.now()
-        });
-
-        window.currentUserProfile = { displayName, email, department: dept, position: pos, role };
-
-        // Закрываем окно и форсируем запуск приложения
-        window.hideLoginScreen && window.hideLoginScreen();
-        window.dispatchEvent(new CustomEvent('fbAuthChanged', { detail: auth.currentUser }));
-      } catch(err){
-        alert("Ошибка регистрации: " + err.message);
-      }
-    };
-
-    // Вход
-    box.querySelector('#btnLogin').onclick = async () => {
-      const email = box.querySelector('#authEmail').value.trim();
-      const pass  = box.querySelector('#authPass').value;
-      try {
-        const cred = await signInWithEmailAndPassword(auth, email, pass);
-        try {
-          const snap = await getDoc(doc(db, "users", cred.user.uid));
-          if (snap.exists()) window.currentUserProfile = snap.data();
-        } catch(e) {}
-        window.hideLoginScreen && window.hideLoginScreen();
-        window.dispatchEvent(new CustomEvent('fbAuthChanged', { detail: auth.currentUser }));
-      } catch(err){
-        alert('Ошибка входа: ' + err.message);
-      }
-    };
-  };
-
-  window.hideLoginScreen = function(){
-    const el = document.querySelector('#authBox');
-    if (el) el.remove();
-  };
-
-  async function loadUserProfile(uid){
-    try{
-      const snap = await getDoc(doc(db, "users", uid));
-      if (snap.exists()) {
-        window.currentUserProfile = snap.data();
-      } else {
-        window.currentUserProfile = null;
-        console.warn("Профиль не найден для uid:", uid);
-      }
-    }catch(e){
-      console.error("Ошибка загрузки профиля:", e);
-      window.currentUserProfile = null;
-    }
-  }
-
-  onAuthStateChanged(auth, async (user) => {
-    if (user) {
-      await loadUserProfile(user.uid);
-    } else {
-      window.currentUserProfile = null;
-    }
-    window.dispatchEvent(new CustomEvent('fbAuthChanged', { detail: user || null }));
-  });
-</script>
-
-<!-- ==== Основное приложение ==== -->
-<script src="app.js"></script>
-
-<!-- ==== Регистрация SW только на https/localhost ==== -->
-<script>
-  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
-    navigator.serviceWorker.register('./sw.js').catch(console.error);
-  }
-</script>
-
-</body>
-</html>
+        <input id="authEmail"  type="email"    placeholder="Email"   style="grid-column:1/3;padding:10px;border-radius:8px;background:#0f1824;border:1px solid #2b3648;color:#e8eef5"/>
+        <input id="authPass"   type="password" placeholder="Password"style="grid-column:1/3;padding:10px;border-radius:8px;background:#0f1824;border:1px solid #2b3648;color:#e8eef5"/>
+  <header>
+    <h1>KPI Board</h1>
+    <span class="tag">Firebase Shared</span>
+  </header>
 
   <main>
     <aside class="side">
@@ -354,6 +228,48 @@
       return "member";
     }
 
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
+        <button id="btnLogin"     style="padding:8px 12px;border-radius:8px">Войти</button>
+        <button id="btnRegister"  style="padding:8px 12px;border-radius:8px">Регистрация</button>
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:#a8b6c9">
+        При регистрации вы будете добавлены в выбранный департамент.
+      </div>
+    </div>
+  `;
+  document.body.appendChild(box);
+
+  // Заполняем выпадающие списки
+  const selDept  = box.querySelector('#authDept');
+  const selPos   = box.querySelector('#authPos');
+  selDept.innerHTML = buildOptions(DEPARTMENTS, "Select department");
+  selPos.innerHTML  = buildOptions([], "Select position");
+  selDept.onchange = () => {
+    const list = POSITIONS_BY_DEPT[selDept.value] || [];
+    selPos.innerHTML = buildOptions(list, "Select position");
+  };
+
+  // Регистрация
+box.querySelector('#btnRegister').onclick = async () => {
+  const first = box.querySelector('#authFirst').value.trim();
+  const last  = box.querySelector('#authLast').value.trim();
+  const dept  = selDept.value;
+  const pos   = selPos.value;
+  const email = box.querySelector('#authEmail').value.trim();
+  const pass  = box.querySelector('#authPass').value;
+
+  if (!first || !last || !dept || !pos || !email || !pass){
+    alert("Заполните все поля"); return;
+  }
+
+  try {
+    const cred = await createUserWithEmailAndPassword(auth, email, pass);
+    const uid  = cred.user.uid;
+    const displayName = `${first} ${last}`;
+    const role = roleFromPosition(pos);
+
+    await setDoc(doc(db, "users", uid), {
+      displayName, email, department: dept, position: pos, role, createdAt: Date.now()
     // ----- Пробрасываем в глобал для app.js -----
     window.__FB_AUTH = auth;
     window.__FB_DB   = db;
@@ -487,6 +403,75 @@
     });
   </script>
 
+    window.currentUserProfile = { displayName, email, department: dept, position: pos, role };
+
+    // 🔽 Сразу закрываем окно и форсируем запуск приложения
+    window.hideLoginScreen && window.hideLoginScreen();
+    window.dispatchEvent(new CustomEvent('fbAuthChanged', { detail: auth.currentUser }));
+  } catch(err){
+    alert("Ошибка регистрации: " + err.message);
+  }
+};
+
+
+ // Вход
+box.querySelector('#btnLogin').onclick = async () => {
+  const email = box.querySelector('#authEmail').value.trim();
+  const pass  = box.querySelector('#authPass').value;
+  try {
+    const cred = await signInWithEmailAndPassword(auth, email, pass);
+
+    // Подтянем профиль на всякий случай (если onAuthStateChanged придёт с задержкой)
+    try {
+      const snap = await getDoc(doc(db, "users", cred.user.uid));
+      if (snap.exists()) window.currentUserProfile = snap.data();
+    } catch (e) { /* не критично */ }
+
+    // 🔽 Закрываем окно и форсируем запуск приложения
+    window.hideLoginScreen && window.hideLoginScreen();
+    window.dispatchEvent(new CustomEvent('fbAuthChanged', { detail: auth.currentUser }));
+  } catch(err){
+    alert('Ошибка входа: ' + err.message);
+  }
+};
+
+
+
+async function loadUserProfile(uid){
+  try{
+    const snap = await getDoc(doc(db, "users", uid));
+    if (snap.exists()) {
+      window.currentUserProfile = snap.data();
+    } else {
+      window.currentUserProfile = null;
+      console.warn("Профиль не найден для uid:", uid);
+    }
+  }catch(e){
+    console.error("Ошибка загрузки профиля:", e);
+    window.currentUserProfile = null;
+  }
+}
+
+onAuthStateChanged(auth, async (user) => {
+  if (user) {
+    await loadUserProfile(user.uid);
+  } else {
+    window.currentUserProfile = null;
+  }
+  window.dispatchEvent(new CustomEvent('fbAuthChanged', { detail: user || null }));
+});
+
+</script>
+
+<!-- ==== Основное приложение ==== -->
+<script src="app.js"></script>
+
+<!-- ==== Регистрация SW только на https/localhost (чтобы не ругался на file://) ==== -->
+<script>
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+    navigator.serviceWorker.register('./sw.js').catch(console.error);
+  }
+</script>
   <!-- ==== Основное приложение ==== -->
   <script src="app.js"></script>
 
