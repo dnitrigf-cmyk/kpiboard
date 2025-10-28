@@ -232,6 +232,46 @@ function save(){
     localStorage.setItem(STORAGE_KEY, JSON.stringify(orgData));
   }
 }
+async function ensureUserFromProfile(){
+  const prof = window.currentUserProfile;
+  if (!prof) return;
+
+  const dept   = prof.department;
+  const name   = prof.displayName;
+  const title  = prof.position || prof.title || "";
+  // гарантия существования департамента
+  orgData.departments[dept] = orgData.departments[dept] || { users: {} };
+
+  // если пользователя нет — создаём
+  if (!orgData.departments[dept].users[name]) {
+    orgData.departments[dept].users[name] = { title, board: defaultBoard() };
+    currentDepartment = dept;
+    currentUser = name;
+    save();
+  } else {
+    // синхронизация должности, если изменилась
+    const node = orgData.departments[dept].users[name];
+    if ((node.title || "") !== title) {
+      node.title = title;
+      save();
+    }
+  }
+}
+function canEditUser(targetDept, targetUserName){
+  const prof = window.currentUserProfile;
+  if (!prof) return false;
+
+  // Director — может всё
+  if (prof.role === "director") return true;
+
+  // Team Leader — может в своём департаменте
+  if (prof.role === "leader" && prof.department === targetDept) return true;
+
+  // Обычный — только сам себя в своём департаменте
+  if (prof.role === "member" && prof.department === targetDept && targetUserName === prof.displayName) return true;
+
+  return false;
+}
 
 function startRealtime(){
   const FB_DB = window.__FB_DB;
@@ -459,19 +499,32 @@ function renderTable(){
     thName.className = "col-kpi editable";
     thName.textContent = row.name;
     thName.addEventListener("contextmenu", (e) => {
-      e.preventDefault();
-      openContextMenu([
-        {label:"Rename", action: () => inlineRenameRowCell(thName, rIdx)},
-        {label:"Delete", action: () => deleteRow(rIdx), danger:true},
-      ], e.pageX, e.pageY);
-    });
+  e.preventDefault();
+  if (!canEditUser(currentDepartment, currentUser)) {
+    alert("Недостаточно прав");
+    return;
+  }
+  openContextMenu([
+    {label:"Rename", action: () => inlineRenameRowCell(thName, rIdx)},
+    {label:"Delete", action: () => deleteRow(rIdx), danger:true},
+  ], e.pageX, e.pageY);
+});
+
     tr.appendChild(thName);
 
     // Target — RMB edit
     const tdTarget = document.createElement("td");
     tdTarget.className = "col-target editable";
     tdTarget.textContent = row.target;
-    tdTarget.addEventListener("contextmenu", (e) => { e.preventDefault(); makeEditableField(tdTarget, row, "target"); });
+    tdTarget.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+  if (!canEditUser(currentDepartment, currentUser)) {
+    alert("Недостаточно прав");
+    return;
+  }
+  makeEditableField(tdTarget, row, "target");
+});
+
     tr.appendChild(tdTarget);
 
     if (viewLevel === "month"){
@@ -502,7 +555,15 @@ function renderTable(){
         wrap.className = "rag progress";
         td.appendChild(wrap);
         paintCellProgress(wrap, val);
-        td.addEventListener("contextmenu", (e)=>{ e.preventDefault(); makeEditableDate(td, row, key); });
+        td.addEventListener("contextmenu", (e)=>{
+  e.preventDefault();
+  if (!canEditUser(currentDepartment, currentUser)) {
+    alert("У вас нет прав редактировать этот KPI");
+    return;
+  }
+  makeEditableDate(td, row, key);
+});
+
         tr.appendChild(td);
       });
     }
@@ -1189,9 +1250,12 @@ window.addEventListener('fbAuthChanged', async (e) => {
   const user = e.detail;
   if (user) {
     window.hideLoginScreen && window.hideLoginScreen();
-    await load();
-    startRealtime();   // ← добавили подписку на живые изменения
+    await load();               // загрузили общую доску из Firestore
+    await ensureUserFromProfile(); // гарантировали карточку и переключились
+    startRealtime();            // подписка на live-обновления
+    renderUsers();
     renderTable();
+    renderSidebar();
   } else {
     if (typeof __unsubRT === 'function') { __unsubRT(); __unsubRT = null; }
     window.showLoginScreen && window.showLoginScreen();
@@ -1199,8 +1263,10 @@ window.addEventListener('fbAuthChanged', async (e) => {
 });
 
 
+
 if (window.__FB_AUTH && window.__FB_AUTH.currentUser) {
   window.dispatchEvent(new CustomEvent('fbAuthChanged', { detail: window.__FB_AUTH.currentUser }));
 } else {
   window.showLoginScreen && window.showLoginScreen();
 }
+
