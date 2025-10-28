@@ -77,8 +77,10 @@ function monthsFrom(startDate, count){
   const list = [];
   for(let i=0;i<count;i++){
     const d = addMonths(startDate, i);
-    list.push({date:firstOfMonth(d), label:d.toLocaleString('ru-RU',{month:'long',year:'numeric'})});
-  }
+    list.push({ 
+  date: firstOfMonth(d), 
+  label: d.toLocaleString('en-US', { month:'long', year:'numeric' })
+});
   return list;
 }
 
@@ -1364,4 +1366,5 @@ if (window.__FB_AUTH && window.__FB_AUTH.currentUser) {
 } else {
   window.showLoginScreen && window.showLoginScreen();
 }
+
 
