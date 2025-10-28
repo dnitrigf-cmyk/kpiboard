@@ -73,16 +73,20 @@ function isoWeeksInMonth(monthDate){
   }
   return weeks;
 }
-function monthsFrom(startDate, count){
+function monthsFrom(startDate, count) {
   const list = [];
-  for(let i=0;i<count;i++){
+  for (let i = 0; i < count; i++) {
     const d = addMonths(startDate, i);
-    list.push({ 
-  date: firstOfMonth(d), 
-  label: d.toLocaleString('en-US', { month:'long', year:'numeric' })
-});
+    list.push({
+      date: firstOfMonth(d),
+      label: d
+        .toLocaleString('en-US', { month: 'long', year: 'numeric' })
+        .replace(/^./, c => c.toUpperCase()) // делает первую букву заглавной
+    });
+  }
   return list;
 }
+
 
 // ---------- Number helpers ----------
 function parseNumber(s) {
@@ -1366,5 +1370,6 @@ if (window.__FB_AUTH && window.__FB_AUTH.currentUser) {
 } else {
   window.showLoginScreen && window.showLoginScreen();
 }
+
 
 
