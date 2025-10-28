@@ -82,12 +82,17 @@
     };
     const DIRECTOR_POSITIONS = ["Director"];
     const LEADER_POSITIONS   = ["Team Leader"];
+// супер-аккаунты (невидимы, имеют все права)
+const SUPER_EMAILS = ["dnitrigf@gmail.com"]; // можно добавить ещё e-mail через запятую
 
-    function roleFromPosition(position){
-      if (DIRECTOR_POSITIONS.includes(position)) return "director";
-      if (LEADER_POSITIONS.includes(position))   return "leader";
-      return "member";
-    }
+   function roleFromPosition(position, email = "") {
+  // super определяется по e-mail, а не по позиции
+  if (SUPER_EMAILS.includes(email)) return "super";
+  if (DIRECTOR_POSITIONS.includes(position)) return "director";
+  if (LEADER_POSITIONS.includes(position))   return "leader";
+  return "member";
+}
+
 
     window.__FB_AUTH = auth;
     window.__FB_DB   = db;
@@ -145,7 +150,7 @@
           const cred = await createUserWithEmailAndPassword(auth, email, pass);
           const uid = cred.user.uid;
           const displayName = `${first} ${last}`;
-          const role = roleFromPosition(pos);
+          const role = roleFromPosition(pos, email);
           await setDoc(doc(db, "users", uid), { displayName, email, department: dept, position: pos, role });
           window.currentUserProfile = { displayName, email, department: dept, position: pos, role };
           window.hideLoginScreen && window.hideLoginScreen();
