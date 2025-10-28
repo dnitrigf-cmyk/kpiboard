@@ -167,51 +167,60 @@ function roleFromPosition(position){
   };
 
   // Регистрация
-  box.querySelector('#btnRegister').onclick = async () => {
-    const first = box.querySelector('#authFirst').value.trim();
-    const last  = box.querySelector('#authLast').value.trim();
-    const dept  = selDept.value;
-    const pos   = selPos.value;
-    const email = box.querySelector('#authEmail').value.trim();
-    const pass  = box.querySelector('#authPass').value;
+box.querySelector('#btnRegister').onclick = async () => {
+  const first = box.querySelector('#authFirst').value.trim();
+  const last  = box.querySelector('#authLast').value.trim();
+  const dept  = selDept.value;
+  const pos   = selPos.value;
+  const email = box.querySelector('#authEmail').value.trim();
+  const pass  = box.querySelector('#authPass').value;
 
-    if (!first || !last || !dept || !pos || !email || !pass){
-      alert("Заполните все поля"); return;
-    }
+  if (!first || !last || !dept || !pos || !email || !pass){
+    alert("Заполните все поля"); return;
+  }
 
-    try {
-      const cred = await createUserWithEmailAndPassword(auth, email, pass);
-      const uid  = cred.user.uid;
-      const displayName = `${first} ${last}`;
-      const role = roleFromPosition(pos);
+  try {
+    const cred = await createUserWithEmailAndPassword(auth, email, pass);
+    const uid  = cred.user.uid;
+    const displayName = `${first} ${last}`;
+    const role = roleFromPosition(pos);
 
-      // Профиль в Firestore: users/{uid}
-      await setDoc(doc(db, "users", uid), {
-        displayName,
-        email,
-        department: dept,
-        position: pos,
-        role,
-        createdAt: Date.now()
-      });
+    await setDoc(doc(db, "users", uid), {
+      displayName, email, department: dept, position: pos, role, createdAt: Date.now()
+    });
 
-      // Сохраним в глобал — app.js будет использовать
-      window.currentUserProfile = { displayName, email, department: dept, position: pos, role };
+    window.currentUserProfile = { displayName, email, department: dept, position: pos, role };
 
-      alert("Регистрация успешна!");
-    } catch(err){
-      alert("Ошибка регистрации: " + err.message);
-    }
-  };
-
-  // Вход
-  box.querySelector('#btnLogin').onclick = async () => {
-    const email = box.querySelector('#authEmail').value.trim();
-    const pass  = box.querySelector('#authPass').value;
-    try { await signInWithEmailAndPassword(auth, email, pass); }
-    catch(err){ alert('Ошибка входа: ' + err.message); }
-  };
+    // 🔽 Сразу закрываем окно и форсируем запуск приложения
+    window.hideLoginScreen && window.hideLoginScreen();
+    window.dispatchEvent(new CustomEvent('fbAuthChanged', { detail: auth.currentUser }));
+  } catch(err){
+    alert("Ошибка регистрации: " + err.message);
+  }
 };
+
+
+ // Вход
+box.querySelector('#btnLogin').onclick = async () => {
+  const email = box.querySelector('#authEmail').value.trim();
+  const pass  = box.querySelector('#authPass').value;
+  try {
+    const cred = await signInWithEmailAndPassword(auth, email, pass);
+
+    // Подтянем профиль на всякий случай (если onAuthStateChanged придёт с задержкой)
+    try {
+      const snap = await getDoc(doc(db, "users", cred.user.uid));
+      if (snap.exists()) window.currentUserProfile = snap.data();
+    } catch (e) { /* не критично */ }
+
+    // 🔽 Закрываем окно и форсируем запуск приложения
+    window.hideLoginScreen && window.hideLoginScreen();
+    window.dispatchEvent(new CustomEvent('fbAuthChanged', { detail: auth.currentUser }));
+  } catch(err){
+    alert('Ошибка входа: ' + err.message);
+  }
+};
+
 
 
 async function loadUserProfile(uid){
