@@ -272,6 +272,14 @@ function canEditUser(targetDept, targetUserName){
 
   return false;
 }
+// ---- Новая функция для прав на управление департаментом ----
+function canManageDept(targetDept){
+  const prof = window.currentUserProfile;
+  if (!prof) return false;
+  if (prof.role === "director") return true;
+  if (prof.role === "leader" && prof.department === targetDept) return true;
+  return false; // member — нет прав
+}
 
 function startRealtime(){
   const FB_DB = window.__FB_DB;
@@ -457,6 +465,11 @@ function switchDepartment(d){
   save(); renderUsers(); renderTable();
 }
 function deleteDepartment(deptName){
+   if (!canManageDept(deptName)) {
+  alert("Недостаточно прав для удаления департамента.");
+  return;
+}
+
   const depts = Object.keys(orgData.departments);
   if (depts.length <= 1){
     alert("You cannot delete the last department.");
@@ -732,6 +745,10 @@ function renderUsers() {
   renderSidebar();
 }
 function deleteUser(name){
+   if (!canManageDept(currentDepartment)) {
+  alert("Недостаточно прав для удаления пользователей.");
+  return;
+}
   const users = orgData.departments[currentDepartment].users;
   if (!confirm(`Delete user "${name}" and all his data?`)) return;
   const rest = Object.keys(users).filter(k=>k!==name);
@@ -819,20 +836,39 @@ function ensureAppMenuButton(headerEl){
   btn.addEventListener("click", (e)=>{
     e.stopPropagation();
     const r = btn.getBoundingClientRect();
-    openContextMenu([
-      {label:"Add User",       action: addUserFromMenu},
-      {label:"Add KPI",        action: addKpiFromMenu},
-      {label:"Add Department", action: openAddDeptModal},
-      {label:"Logout",         action: ()=>window.__fbLogout && window.__fbLogout()},
-    ], r.right, r.bottom+6);
+    const prof = window.currentUserProfile || {};
+const canManage = canManageDept(currentDepartment);
+const canEdit   = canEditUser(currentDepartment, currentUser);
+
+const menuItems = [
+  {label:"Add User",       action: canManage ? addUserFromMenu : null},
+  {label:"Add KPI",        action: canEdit ? addKpiFromMenu : null},
+  {label:"Add Department", action: prof.role === "director" ? openAddDeptModal : null},
+  {label:"Logout",         action: ()=>window.__fbLogout && window.__fbLogout()},
+].filter(i => i.action);
+
+openContextMenu(menuItems, r.right, r.bottom+6);
+
   }, { once:false });
 }
 function addKpiFromMenu(){
+  if (!canEditUser(currentDepartment, currentUser)) {
+    alert("Недостаточно прав для добавления KPI.");
+    return;
+  }
   const board = orgData.departments[currentDepartment].users[currentUser].board;
   board.rows.push({ name:"New KPI", target:">= 0", entries:{} });
   save(); renderTable();
 }
-function addUserFromMenu(){ openAddUserModal(); }
+
+function addUserFromMenu(){
+  if (!canManageDept(currentDepartment)) {
+    alert("Недостаточно прав для добавления пользователя.");
+    return;
+  }
+  openAddUserModal();
+}
+
 
 // ---------- Sidebar (left) ----------
 function renderSidebar(){
@@ -1108,6 +1144,11 @@ function openRenameUserModal(oldName){
 
 // ---------- Modal: Add Department ----------
 function openAddDeptModal(){
+   if (!canManageDept(currentDepartment)) {
+  alert("Недостаточно прав для добавления департамента.");
+  return;
+}
+
   const root = ensureModalRoot();
   root.classList.add("active");
   root.style.display = "flex";
@@ -1168,6 +1209,11 @@ function openAddDeptModal(){
 
 // ---------- Modal: Rename Department ----------
 function openRenameDeptModal(initialName){
+   if (!canManageDept(currentDepartment)) {
+  alert("Недостаточно прав для переименования департамента.");
+  return;
+}
+
   const dept = initialName || currentDepartment;
   const root = ensureModalRoot();
   root.classList.add("active");
@@ -1269,4 +1315,5 @@ if (window.__FB_AUTH && window.__FB_AUTH.currentUser) {
 } else {
   window.showLoginScreen && window.showLoginScreen();
 }
+
 
