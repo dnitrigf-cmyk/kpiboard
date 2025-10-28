@@ -235,9 +235,35 @@ async function ensureUserFromProfile(){
   const prof = window.currentUserProfile;
   if (!prof) return;
 
+  // ❗ super — не создаём карточку пользователя в orgData, чтобы быть невидимым
+  if (prof.role === "super") {
+    // гарантируем, что в orgData хоть кто-то есть, чтобы было что смотреть/редактировать
+    if (!Object.keys(orgData.departments).length) {
+      orgData.departments["General"] = { users: { "User 1": { title:"", board: defaultBoard() } } };
+      currentDepartment = "General";
+      currentUser = "User 1";
+      save();
+    } else {
+      // если уже есть департаменты — просто ставим первый попавшийся как текущий
+      const firstDept = Object.keys(orgData.departments)[0];
+      currentDepartment = firstDept;
+      const users = Object.keys(orgData.departments[firstDept].users);
+      if (!users.length) {
+        orgData.departments[firstDept].users["User 1"] = { title:"", board: defaultBoard() };
+        currentUser = "User 1";
+        save();
+      } else {
+        currentUser = users[0];
+      }
+    }
+    return; // всё, супер остаётся невидимым
+  }
+
+  // ---- обычная логика для всех остальных ролей ----
   const dept   = prof.department;
   const name   = prof.displayName;
   const title  = prof.position || prof.title || "";
+
   // гарантия существования департамента
   orgData.departments[dept] = orgData.departments[dept] || { users: {} };
 
@@ -254,8 +280,12 @@ async function ensureUserFromProfile(){
       node.title = title;
       save();
     }
+    // текущее выделение
+    currentDepartment = dept;
+    currentUser = name;
   }
 }
+
 
 // ---------- Roles / Permissions ----------
 function isSuper(){ return (window.currentUserProfile?.role === "super"); }
@@ -263,22 +293,33 @@ function isSuper(){ return (window.currentUserProfile?.role === "super"); }
 function canManageDept(targetDept){
   const prof = window.currentUserProfile;
   if (!prof) return false;
-  if (isSuper()) return true;
-  if (prof.role === "director") return true;
-  if (prof.role === "leader" && prof.department === targetDept) return true;
+  if (prof.role === "super")    return true;          // super — всё
+  if (prof.role === "director") return true;          // director — всё
+  if (prof.role === "leader" && prof.department === targetDept) return true; // лидер в своём депте
   return false; // member — нет прав
 }
+
 
 // редактирование значений KPI (дни) — своё, лидер в департаменте, директор/супер везде
 function canEditUser(targetDept, targetUserName){
   const prof = window.currentUserProfile;
   if (!prof) return false;
-  if (isSuper()) return true;
+
+  // Super — может всё
+  if (prof.role === "super") return true;
+
+  // Director — может всё
   if (prof.role === "director") return true;
+
+  // Team Leader — может в своём департаменте
   if (prof.role === "leader" && prof.department === targetDept) return true;
+
+  // Обычный — только сам себя в своём департаменте
   if (prof.role === "member" && prof.department === targetDept && targetUserName === prof.displayName) return true;
+
   return false;
 }
+
 
 // управление структурой KPI (добавить/переименовать/менять Target/удалять)
 function canManageKpi(targetDept){
@@ -821,7 +862,7 @@ function ensureAppMenuButton(headerEl){
       const menuItems = [
         {label:"Add User",       action: canManageDept(currentDepartment) ? addUserFromMenu : null},
         {label:"Add KPI",        action: canAddKpi(currentDepartment) ? addKpiFromMenu : null},
-        {label:"Add Department", action: canManageDept(currentDepartment) ? openAddDeptModal : null},
+        {label:"Add Department", action: (prof.role === "director" || prof.role === "super") ? openAddDeptModal : null},
         {label:"Logout",         action: ()=>window.__fbLogout && window.__fbLogout()},
       ].filter(i => i.action);
       openContextMenu(menuItems, r.right, r.bottom+6);
@@ -1323,3 +1364,4 @@ if (window.__FB_AUTH && window.__FB_AUTH.currentUser) {
 } else {
   window.showLoginScreen && window.showLoginScreen();
 }
+
