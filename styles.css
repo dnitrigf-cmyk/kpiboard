@@ -1,5 +1,9 @@
-/* === KPI BOARD DARK THEME (v8.1) === */
-:root{
+/* =========================================================
+   THEMES — TOKENS
+   ========================================================= */
+
+/* DARK (твоя текущая палитра) */
+body.theme-dark{
   --bg:#0c1118;
   --card:#0f1620;
   --card-2:#111a26;
@@ -7,15 +11,58 @@
   --text:#e8eef5;
   --muted:#a8b6c9;
   --border:#1e2a3b;
+
   --green-bg:#123426;
   --green-bd:#225b45;
   --red-bg:#2b171b;
   --red-bd:#5c2a31;
   --gray-bg:#1a222e;
   --gray-bd:#2b3648;
+
   --shadow:0 8px 22px rgba(0,0,0,.35);
+
+  --btn-ghost:#101a28;
+  --btn-ghost-hover:#182439;
+
+  --ctx-bg:#0f1824;
+
+  --scroll-track:#0f1620;
+  --scroll-thumb:#1b2738;
 }
 
+/* LIGHT */
+body.theme-light{
+  --bg:#f6f7fb;
+  --card:#ffffff;
+  --card-2:#f2f4f8;
+  --head:#ffffff;
+  --text:#1c2430;
+  --muted:#5b6b82;
+  --border:#dee3ea;
+
+  --green-bg:#e8f6ef;
+  --green-bd:#2ea76a;
+  --red-bg:#fff0f0;
+  --red-bd:#e05252;
+  --gray-bg:#eef2f7;
+  --gray-bd:#cfd8e3;
+
+  --shadow:0 8px 22px rgba(14,30,62,.10);
+
+  --btn-ghost:#eef3fb;
+  --btn-ghost-hover:#e5eefc;
+
+  --ctx-bg:#ffffff;
+
+  --scroll-track:#e9eef6;
+  --scroll-thumb:#cfd8e3;
+}
+
+/* =========================================================
+   БАЗОВЫЕ СТИЛИ (твой исходный код — оставил как есть)
+   ========================================================= */
+
+/* === KPI BOARD DARK THEME (v8.1) === */
 *{box-sizing:border-box}
 html,body{height:100%}
 body{
@@ -202,7 +249,7 @@ tbody tr:hover{background:#121d2a}
 }
 .grid-wrap::-webkit-scrollbar-track{ background:#0f1620; }
 
-/* ===== MODAL (Add User) ===== */
+/* ===== MODAL (Add / Rename / Dept / Reporting) ===== */
 #modal-root{ position:fixed; inset:0; z-index:10000; display:none; }
 .modal-overlay{
   position:absolute; inset:0;
@@ -224,7 +271,6 @@ tbody tr:hover{background:#121d2a}
   from{ transform: translate(-50%,-48%) scale(.98); opacity:.0; }
   to  { transform: translate(-50%,-50%) scale(1);   opacity:1;  }
 }
-/* лёгкая тряска при ошибке ввода */
 .modal-card.shake{ animation: shake .18s linear; }
 @keyframes shake{
   0%{ transform:translate(-50%,-50%) }
@@ -310,7 +356,7 @@ tbody tr:hover{background:#121d2a}
 
 /* Мини-версия прогресса */
 .rag.progress.mini{
-  height: 20px;               /* компактнее */
+  height: 20px;
   border-radius: 8px;
   font-size: 12px;
 }
@@ -318,3 +364,130 @@ tbody tr:hover{background:#121d2a}
   font-weight:700;
 }
 
+/* =========================================================
+   LIGHT THEME OVERRIDES (перекраска тёмных «жёстких» мест)
+   ========================================================= */
+body.theme-light{
+  background: var(--bg);
+}
+body.theme-light header{
+  background: var(--head);
+  border-bottom:1px solid var(--border);
+}
+body.theme-light .app-menu-btn{
+  background: var(--btn-ghost);
+  color: var(--text);
+  border:1px solid var(--border);
+}
+body.theme-light .app-menu-btn:hover{
+  background: var(--btn-ghost-hover);
+  color: var(--text);
+  border-color: var(--border);
+}
+body.theme-light .head-controls{
+  background: var(--head);
+  border-bottom:1px solid var(--border);
+}
+body.theme-light .hc-btn{
+  background: var(--btn-ghost);
+  color: var(--text);
+  border:1px solid var(--border);
+}
+body.theme-light .hc-btn:hover{
+  background: var(--btn-ghost-hover);
+}
+body.theme-light thead th{
+  background: var(--card-2);
+  color: var(--text);
+  border-bottom:1px solid var(--border);
+}
+body.theme-light tbody tr:nth-child(odd){ background: var(--card); }
+body.theme-light tbody tr:nth-child(even){ background: var(--card-2); }
+body.theme-light tbody tr:hover{ background:#eef3fb; }
+body.theme-light .editable:hover{ background:#f6f9ff; }
+
+body.theme-light .inline-input{
+  background:#fff;
+  color: var(--text);
+  border:1px solid var(--border);
+}
+body.theme-light .usersbar{
+  background: var(--card);
+  border-top:1px solid var(--border);
+}
+body.theme-light .userBtn{
+  background: var(--btn-ghost);
+  color: var(--text);
+  border:1px solid var(--border);
+}
+body.theme-light .userBtn.active{
+  background:#1a73e8;
+  color:#fff;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+body.theme-light .nav-btn{
+  background: var(--btn-ghost);
+  color: var(--text);
+  border:1px solid var(--border);
+}
+body.theme-light .nav-btn:hover{ background: var(--btn-ghost-hover); }
+
+body.theme-light .ctx-menu{
+  background: var(--ctx-bg);
+  color: var(--text);
+  border:1px solid var(--border);
+  box-shadow: 0 12px 30px rgba(14,30,62,.12);
+}
+body.theme-light .ctx-item:hover{ background:#f3f6fb; }
+body.theme-light .ctx-item.danger{ color:#b42318; }
+body.theme-light .ctx-item.danger:hover{ background:#fdecec; }
+
+body.theme-light .modal-overlay{
+  background: rgba(9,15,25,.25);
+  backdrop-filter: blur(2px);
+}
+body.theme-light .modal-card{
+  background: #fff;
+  border:1px solid var(--border);
+  box-shadow: 0 20px 60px rgba(14,30,62,.18);
+}
+body.theme-light .modal-header{
+  background: var(--head);
+  border-bottom:1px solid var(--border);
+}
+body.theme-light .modal-input{
+  background:#fff; border:1px solid var(--border); color:var(--text);
+}
+body.theme-light .modal-hint{ color: var(--muted); }
+body.theme-light .modal-error{
+  color:#b42318; background:#fdecec; border:1px solid #f3b2b0;
+}
+body.theme-light .modal-actions{
+  background: var(--head);
+  border-top:1px solid var(--border);
+}
+body.theme-light .btn{
+  background: var(--btn-ghost);
+  color: var(--text);
+  border:1px solid var(--border);
+}
+body.theme-light .btn.ghost:hover{ background: var(--btn-ghost-hover); }
+body.theme-light .btn.primary{
+  background:#1a73e8; color:#fff; border:0;
+}
+
+body.theme-light .rag.progress{
+  background: var(--card-2);
+  border:1px solid var(--border);
+}
+body.theme-light .rag.progress .pct{
+  color: var(--text);
+  text-shadow: none;
+}
+/* полосы скролла */
+body.theme-light .grid-wrap::-webkit-scrollbar-thumb{
+  background: var(--scroll-thumb); border:2px solid var(--scroll-track);
+}
+body.theme-light .grid-wrap::-webkit-scrollbar-track{ background: var(--scroll-track); }
