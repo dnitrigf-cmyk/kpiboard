@@ -6,6 +6,7 @@
    - Header menu ≡ forced to far right (+ Logout)
    - Rename User via modal (edit Name + Position)
    - Users store { title, board }
+   - KPI Reporting Type: daily / weekly / monthly
    ========================= */
 
 const STORAGE_KEY = "kpi-multiuser-v7";
@@ -77,7 +78,10 @@ function monthsFrom(startDate, count){
   const list = [];
   for(let i=0;i<count;i++){
     const d = addMonths(startDate, i);
-    list.push({date:firstOfMonth(d), label:d.toLocaleString('ru-RU',{month:'long',year:'numeric'})});
+    list.push({
+      date: firstOfMonth(d),
+      label: d.toLocaleString('en-US', { month:'long', year:'numeric' }).replace(/^./, c => c.toUpperCase())
+    });
   }
   return list;
 }
@@ -105,12 +109,13 @@ function averageNumbers(arr){
 function defaultBoard(){
   return {
     rows: [
-      { name: "Contract (%)", target: ">= 71 %", entries: {} },
-      { name: "Spot (%)",     target: "<= 29 %", entries: {} },
-      { name: "Shipments",    target: ">= 9,200", entries: {} }
+      { name: "Contract (%)", target: ">= 71 %", entries: {}, reporting: { daily:true,  weekly:true,  monthly:true } },
+      { name: "Spot (%)",     target: "<= 29 %", entries: {}, reporting: { daily:true,  weekly:true,  monthly:true } },
+      { name: "Shipments",    target: ">= 9,200", entries: {}, reporting: { daily:true,  weekly:true,  monthly:true } }
     ]
   };
 }
+
 // ---------- Firestore realtime globals ----------
 let __unsubRT = null;
 let __isLocalSave = false;
@@ -127,7 +132,12 @@ function migrateLegacyBoardFormat(board){
         r.entries[ymd(d)] = val;
       });
       delete r.values; r.weeks && delete r.weeks;
-    } else { r.entries = r.entries || {}; }
+    } else {
+      r.entries = r.entries || {};
+    }
+    if (!r.reporting){
+      r.reporting = { daily:true, weekly:true, monthly:true };
+    }
   });
 }
 function migrateIfNeeded(raw){
@@ -136,7 +146,6 @@ function migrateIfNeeded(raw){
       obj.users = obj.users || {};
       for (const [uname, maybeNode] of Object.entries(obj.users)){
         if (maybeNode && !("board" in maybeNode)){
-          // legacy: user -> board
           migrateLegacyBoardFormat(maybeNode);
           obj.users[uname] = { title:"", board: maybeNode };
         } else {
@@ -189,7 +198,6 @@ function load(){
         }
       } catch(err){
         console.error("Firestore load error:", err);
-        // fallback — локальный кеш
         try {
           const s = localStorage.getItem(STORAGE_KEY);
           if (s) orgData = migrateIfNeeded(JSON.parse(s));
@@ -205,12 +213,10 @@ function load(){
       currentUser = Object.keys(orgData.departments[currentDepartment].users)[0];
       monthPagerStart = firstOfMonth(new Date());
 
-      // Синхронизируем текущее состояние в базу (единообразие)
       save();
       resolve();
     }
 
-    // ждём авторизацию, если её ещё нет
     if (FB_AUTH && FB_AUTH.currentUser) doLoad();
     else {
       const onAuth = () => { window.removeEventListener('fbAuthChanged', onAuth); doLoad(); };
@@ -238,17 +244,15 @@ async function ensureUserFromProfile(){
   const dept   = prof.department;
   const name   = prof.displayName;
   const title  = prof.position || prof.title || "";
-  // гарантия существования департамента
+
   orgData.departments[dept] = orgData.departments[dept] || { users: {} };
 
-  // если пользователя нет — создаём
   if (!orgData.departments[dept].users[name]) {
     orgData.departments[dept].users[name] = { title, board: defaultBoard() };
     currentDepartment = dept;
     currentUser = name;
     save();
   } else {
-    // синхронизация должности, если изменилась
     const node = orgData.departments[dept].users[name];
     if ((node.title || "") !== title) {
       node.title = title;
@@ -259,17 +263,14 @@ async function ensureUserFromProfile(){
 
 // ---------- Roles / Permissions ----------
 function isSuper(){ return (window.currentUserProfile?.role === "super"); }
-
 function canManageDept(targetDept){
   const prof = window.currentUserProfile;
   if (!prof) return false;
   if (isSuper()) return true;
   if (prof.role === "director") return true;
   if (prof.role === "leader" && prof.department === targetDept) return true;
-  return false; // member — нет прав
+  return false;
 }
-
-// редактирование значений KPI (дни) — своё, лидер в департаменте, директор/супер везде
 function canEditUser(targetDept, targetUserName){
   const prof = window.currentUserProfile;
   if (!prof) return false;
@@ -279,8 +280,6 @@ function canEditUser(targetDept, targetUserName){
   if (prof.role === "member" && prof.department === targetDept && targetUserName === prof.displayName) return true;
   return false;
 }
-
-// управление структурой KPI (добавить/переименовать/менять Target/удалять)
 function canManageKpi(targetDept){
   const prof = window.currentUserProfile;
   if (!prof) return false;
@@ -303,7 +302,6 @@ function startRealtime(){
 
   __unsubRT = onSnap(ref, (snap)=>{
     if (!snap.exists()) return;
-    // если это наш локальный save — пропускаем один цикл
     if (__isLocalSave) { __isLocalSave = false; return; }
 
     const incoming = migrateIfNeeded(snap.data());
@@ -347,6 +345,24 @@ function computeUserAverageInDept(deptName, userName, from, to){
   if (!vals.length) return null;
   const avg = vals.reduce((a,b)=>a+b,0) / vals.length;
   return Math.round(avg * 100) / 100;
+}
+
+// ---------- Reporting helpers ----------
+function rowMode(row){
+  const r = row.reporting || { daily:true, weekly:true, monthly:true };
+  if (r.daily) return "daily";
+  if (r.weekly) return "weekly";
+  return "monthly";
+}
+function weeklyValuesInMonth(row, monthDate){
+  const from = firstOfMonth(monthDate);
+  const to   = endOfMonth(monthDate);
+  const out = [];
+  for (const [k,v] of Object.entries(row.entries || {})){
+    const d = new Date(k+"T00:00:00");
+    if (d >= from && d <= to) out.push(v);
+  }
+  return out;
 }
 
 // ---------- Header builders ----------
@@ -420,7 +436,6 @@ function ensureDeptSelector(){
   const header = document.querySelector("header");
   if (!header) return;
 
-  // make header a flex row if not already
   if (getComputedStyle(header).display !== "flex"){
     header.style.display = "flex";
     header.style.alignItems = "center";
@@ -437,7 +452,6 @@ function ensureDeptSelector(){
     header.appendChild(holder);
   }
 
-  // chips row
   holder.innerHTML = `<span style="color:#a8b6c9;font-size:12px;">Department:</span><div id="deptChips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>`;
   const chips = holder.querySelector("#deptChips");
   Object.keys(orgData.departments).forEach(d=>{
@@ -446,10 +460,7 @@ function ensureDeptSelector(){
     chip.style.borderRadius = "999px";
     chip.textContent = d;
 
-    // LMB — switch
     chip.addEventListener("click", ()=> switchDepartment(d));
-
-    // RMB — manage
     chip.addEventListener("contextmenu", (e)=>{
       e.preventDefault();
       openContextMenu([
@@ -462,7 +473,6 @@ function ensureDeptSelector(){
     chips.appendChild(chip);
   });
 
-  // ensure menu button is far right
   ensureAppMenuButton(header);
 }
 function switchDepartment(d){
@@ -516,7 +526,7 @@ function renderTable(){
   board.rows.forEach((row, rIdx) => {
     const tr = document.createElement("tr");
 
-    // KPI name — RMB inline rename/delete (только у тех, у кого есть права управлять KPI)
+    // KPI name — RMB menu
     const thName = document.createElement("th");
     thName.className = "col-kpi editable";
     thName.textContent = row.name;
@@ -527,62 +537,112 @@ function renderTable(){
         return;
       }
       openContextMenu([
-        {label:"Rename", action: () => inlineRenameRowCell(thName, rIdx)},
-        {label:"Delete", action: () => deleteRow(rIdx), danger:true},
+        {label:"Rename",         action: () => inlineRenameRowCell(thName, rIdx)},
+        {label:"Reporting Type", action: () => openReportingTypeModal(rIdx)},
+        {label:"Delete",         action: () => deleteRow(rIdx), danger:true},
       ], e.pageX, e.pageY);
     });
     tr.appendChild(thName);
 
-    // Target — RMB edit (только менеджеры KPI)
+    // Target — RMB edit
     const tdTarget = document.createElement("td");
     tdTarget.className = "col-target editable";
     tdTarget.textContent = row.target;
     tdTarget.addEventListener("contextmenu", (e) => {
       e.preventDefault();
-      if (!canManageKpi(currentDepartment)) {
-        alert("Недостаточно прав");
-        return;
-      }
+      if (!canManageKpi(currentDepartment)) { alert("Недостаточно прав"); return; }
       makeEditableField(tdTarget, row, "target");
     });
     tr.appendChild(tdTarget);
 
     if (viewLevel === "month"){
+      const mode = rowMode(row);
       monthsFrom(monthPagerStart, MONTH_WINDOW).forEach(({date})=>{
         const from = firstOfMonth(date), to = endOfMonth(date);
-        const vals = valuesInRange(row.entries, from, to);
-        const avg = averageNumbers(vals);
-        const td = document.createElement("td"); td.className = "cell";
-        td.appendChild(makeProgress(avg)); tr.appendChild(td);
+        let display = null;
+        let editableKey = null;
+
+        if (mode === "daily"){
+          const vals = valuesInRange(row.entries, from, to);
+          display = averageNumbers(vals);
+        } else if (mode === "weekly"){
+          const vals = weeklyValuesInMonth(row, date);
+          display = averageNumbers(vals);
+        } else { // monthly
+          const key = ymd(firstOfMonth(date));
+          display = normalizePercent(row.entries[key]);
+          editableKey = key;
+        }
+
+        const td = document.createElement("td"); td.className = "cell" + (editableKey ? " editable":"");
+        td.appendChild(makeProgress(display));
+        if (editableKey){
+          td.addEventListener("contextmenu", (e)=>{
+            e.preventDefault();
+            if (!canEditUser(currentDepartment, currentUser)) { alert("У вас нет прав редактировать этот KPI"); return; }
+            makeEditableDate(td, row, editableKey);
+          });
+        }
+        tr.appendChild(td);
       });
+
     } else if (viewLevel === "week"){
+      const mode = rowMode(row);
       isoWeeksInMonth(currentMonth).forEach(({week,year})=>{
         const ds = datesOfISOWeek(week, year);
         const from = ds[0], to = ds[ds.length-1];
-        const vals = valuesInRange(row.entries, from, to);
-        const avg = averageNumbers(vals);
-        const td = document.createElement("td"); td.className = "cell";
-        td.appendChild(makeProgress(avg)); tr.appendChild(td);
+
+        let display = null;
+        let editableKey = null;
+
+        if (mode === "daily"){
+          const vals = valuesInRange(row.entries, from, to);
+          display = averageNumbers(vals);
+        } else if (mode === "weekly"){
+          const weekKey = ymd(ds[0]); // Monday
+          display = normalizePercent(row.entries[weekKey]);
+          editableKey = weekKey;
+        } else {
+          display = null;
+        }
+
+        const td = document.createElement("td"); td.className = "cell" + (editableKey ? " editable":"");
+        td.appendChild(makeProgress(display));
+        if (editableKey){
+          td.addEventListener("contextmenu", (e)=>{
+            e.preventDefault();
+            if (!canEditUser(currentDepartment, currentUser)) { alert("У вас нет прав редактировать этот KPI"); return; }
+            makeEditableDate(td, row, editableKey);
+          });
+        }
+        tr.appendChild(td);
       });
+
     } else { // day
+      const mode = rowMode(row);
       const days = datesOfISOWeek(currentISO.week, currentISO.year);
       days.forEach((d)=>{
         const key = ymd(d);
-        const val = row.entries[key] || "";
         const td = document.createElement("td");
-        td.className = "cell editable";
+        const editable = (mode === "daily");
+        td.className = "cell" + (editable ? " editable" : "");
+
         const wrap = document.createElement("div");
         wrap.className = "rag progress";
         td.appendChild(wrap);
-        paintCellProgress(wrap, val);
-        td.addEventListener("contextmenu", (e)=>{
-          e.preventDefault();
-          if (!canEditUser(currentDepartment, currentUser)) {
-            alert("У вас нет прав редактировать этот KPI");
-            return;
-          }
-          makeEditableDate(td, row, key);
-        });
+
+        const val = row.entries[key] || "";
+        if (editable){
+          paintCellProgress(wrap, val);
+          td.addEventListener("contextmenu", (e)=>{
+            e.preventDefault();
+            if (!canEditUser(currentDepartment, currentUser)) { alert("У вас нет прав редактировать этот KPI"); return; }
+            makeEditableDate(td, row, key);
+          });
+        } else {
+          wrap.innerHTML = `<div class="bar gray" style="width:0%"></div><span class="pct">—</span>`;
+        }
+
         tr.appendChild(td);
       });
     }
@@ -599,9 +659,9 @@ function renderTable(){
 
   renderHeaderControls();
   renderNavArrows();
-  ensureDeptSelector();   // chips
+  ensureDeptSelector();
   hideDeprecatedButtons();
-  renderUsers();          // also re-renders sidebar
+  renderUsers();
 }
 
 // ---------- Progress bar cells ----------
@@ -685,6 +745,77 @@ function inlineRenameRowCell(cellEl, rIdx){
   input.addEventListener("blur", commit);
 }
 
+// ---------- Reporting Type modal ----------
+function openReportingTypeModal(rIdx){
+  if (!canManageKpi(currentDepartment)) {
+    alert("Недостаточно прав");
+    return;
+  }
+
+  const row = orgData.departments[currentDepartment].users[currentUser].board.rows[rIdx];
+  const r = row.reporting || { daily:true, weekly:true, monthly:true };
+
+  const root = ensureModalRoot();
+  root.classList.add("active");
+  root.style.display = "flex";
+  root.innerHTML = `
+    <div class="modal-overlay"></div>
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <div class="modal-header">
+        <h3>Reporting Type</h3>
+        <button class="modal-x" title="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <label style="display:flex;gap:8px;align-items:center;margin:6px 0;">
+          <input type="checkbox" id="rtDaily"   ${r.daily   ? "checked":""}> Daily
+        </label>
+        <label style="display:flex;gap:8px;align-items:center;margin:6px 0;">
+          <input type="checkbox" id="rtWeekly"  ${r.weekly  ? "checked":""}> Weekly
+        </label>
+        <label style="display:flex;gap:8px;align-items:center;margin:6px 0;">
+          <input type="checkbox" id="rtMonthly" ${r.monthly ? "checked":""}> Monthly
+        </label>
+        <p class="modal-hint" style="margin-top:10px;">
+          If all three enabled — input daily; if Weekly+Monthly — input weekly; if only Monthly — input monthly.
+        </p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="rtCancel">Cancel</button>
+        <button class="btn primary" id="rtSave">Save</button>
+      </div>
+    </div>
+  `;
+  document.body.style.overflow = "hidden";
+
+  const overlay  = root.querySelector(".modal-overlay");
+  const btnX     = root.querySelector(".modal-x");
+  const btnCancel= root.querySelector("#rtCancel");
+  const btnSave  = root.querySelector("#rtSave");
+
+  const rtDaily   = root.querySelector("#rtDaily");
+  const rtWeekly  = root.querySelector("#rtWeekly");
+  const rtMonthly = root.querySelector("#rtMonthly");
+
+  const close = () => closeModal();
+
+  btnSave.onclick = () => {
+    if (!rtDaily.checked && !rtWeekly.checked && !rtMonthly.checked){
+      alert("Leave at least one type enabled.");
+      return;
+    }
+    row.reporting = {
+      daily:   rtDaily.checked,
+      weekly:  rtWeekly.checked,
+      monthly: rtMonthly.checked
+    };
+    save();
+    renderTable();
+    close();
+  };
+
+  [btnCancel, btnX, overlay].forEach(el => el.addEventListener("click", close));
+}
+
 // ---------- Context menu ----------
 let ctxMenuEl = null;
 function ensureCtxMenu(){
@@ -744,7 +875,6 @@ function renderUsers() {
 
     btn.onclick = () => { currentUser = name; renderUsers(); renderTable(); };
 
-    // контекстное меню только для управляющих департаментом
     if (canManageDept(currentDepartment)) {
       btn.addEventListener("contextmenu", (e)=>{
         e.preventDefault();
@@ -829,7 +959,6 @@ function ensureAppMenuButton(headerEl){
     return;
   }
 
-  // ensure a flex grow spacer before menu to push it right
   let spacer = header.querySelector("#headSpacerGrow");
   if (!spacer){
     spacer = document.createElement("div");
@@ -847,7 +976,7 @@ function ensureAppMenuButton(headerEl){
     btn.textContent = "≡";
     header.appendChild(btn);
   } else {
-    header.appendChild(btn); // move to the end if structure changed
+    header.appendChild(btn);
   }
 
   btn.addEventListener("click", (e)=>{
@@ -868,10 +997,9 @@ function addKpiFromMenu(){
     return;
   }
   const board = orgData.departments[currentDepartment].users[currentUser].board;
-  board.rows.push({ name:"New KPI", target:">= 0", entries:{} });
+  board.rows.push({ name:"New KPI", target:">= 0", entries:{}, reporting:{ daily:true, weekly:true, monthly:true } });
   save(); renderTable();
 }
-
 function addUserFromMenu(){
   if (!canManageDept(currentDepartment)) {
     alert("Недостаточно прав для добавления пользователя.");
@@ -887,7 +1015,6 @@ function renderSidebar(){
 
   const {from, to} = currentDateRange();
 
-  // scope header with toggle buttons
   let scopeBar = side.querySelector(".users-scope");
   if (!scopeBar){
     scopeBar = document.createElement("div");
@@ -904,7 +1031,6 @@ function renderSidebar(){
     b.onclick = ()=>{ sidebarScope = b.dataset.scope; renderSidebar(); };
   });
 
-  // list block
   let list = side.querySelector(".users-summary");
   if (!list){
     list = document.createElement("div");
@@ -964,14 +1090,12 @@ function makeSidebarUserItem(deptName, name, from, to){
   }
   item.appendChild(barWrap);
 
-  // LKM — перейти к пользователю (и к департаменту)
   item.addEventListener("click", ()=>{
     currentDepartment = deptName;
     currentUser = name;
     save(); renderUsers(); renderTable(); renderSidebar();
   });
 
-  // PKM — фильтр KPI
   item.addEventListener("contextmenu", (e)=>{
     e.preventDefault();
     const userBoard = node.board;
@@ -1074,7 +1198,7 @@ function openAddUserModal(){
   setTimeout(()=> input.focus(), 0);
 }
 
-// ---------- Modal: Rename User (Name + Position) ----------
+// ---------- Modal: Rename User ----------
 function openRenameUserModal(oldName){
   const node = orgData.departments[currentDepartment].users[oldName];
   const oldTitle = node?.title || "";
@@ -1121,7 +1245,6 @@ function openRenameUserModal(oldName){
     const users = orgData.departments[currentDepartment].users;
     if (newName !== oldName && users[newName]){ showError("Name already exists in this department"); return; }
 
-    // if name changed, rebuild keys preserving order
     if (newName !== oldName){
       const ordered = {};
       Object.keys(users).forEach(k=>{
@@ -1261,7 +1384,6 @@ function openRenameDeptModal(initialName){
     if (!raw){ showError("Please enter a name"); return; }
     if (raw === dept){ closeModal(); return; }
     if (orgData.departments[raw]){ showError("Department already exists"); return; }
-    // rename key while preserving order
     const ordered = {};
     for (const k of Object.keys(orgData.departments)){
       if (k === dept) ordered[raw] = orgData.departments[k];
@@ -1269,7 +1391,6 @@ function openRenameDeptModal(initialName){
     }
     orgData.departments = ordered;
 
-    // move filters
     if (sideUserFilters[dept]){
       sideUserFilters[raw] = sideUserFilters[dept];
       delete sideUserFilters[dept];
@@ -1306,9 +1427,9 @@ window.addEventListener('fbAuthChanged', async (e) => {
   const user = e.detail;
   if (user) {
     window.hideLoginScreen && window.hideLoginScreen();
-    await load();               // загрузили общую доску из Firestore
-    await ensureUserFromProfile(); // гарантировали карточку и переключились
-    startRealtime();            // подписка на live-обновления
+    await load();
+    await ensureUserFromProfile();
+    startRealtime();
     renderUsers();
     renderTable();
     renderSidebar();
@@ -1317,10 +1438,8 @@ window.addEventListener('fbAuthChanged', async (e) => {
     window.showLoginScreen && window.showLoginScreen();
   }
 });
-
 if (window.__FB_AUTH && window.__FB_AUTH.currentUser) {
   window.dispatchEvent(new CustomEvent('fbAuthChanged', { detail: window.__FB_AUTH.currentUser }));
 } else {
   window.showLoginScreen && window.showLoginScreen();
 }
-
