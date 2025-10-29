@@ -111,16 +111,14 @@ function averageNumbers(arr){
 function defaultBoard(){
   return {
     rows: [
-      { name: "Contract (%)", target: ">= 71 %", entries: {} },
-      { name: "Spot (%)",     target: "<= 29 %", entries: {} },
-      { name: "Shipments",    target: ">= 9,200", entries: {} }
+      { name: "Contract (%)", target: ">= 71 %", entries: {}, reporting: { daily: true, weekly: true, monthly: true } },
+      { name: "Spot (%)",     target: "<= 29 %", entries: {}, reporting: { daily: true, weekly: true, monthly: true } },
+      { name: "Shipments",    target: ">= 9,200", entries: {}, reporting: { daily: true, weekly: true, monthly: true } }
     ]
   };
 }
-// ---------- Firestore realtime globals ----------
-let __unsubRT = null;
-let __isLocalSave = false;
 
+// ---------- Firestore realtime globals ----------
 function migrateLegacyBoardFormat(board){
   board.rows.forEach(r=>{
     if (Array.isArray(r.values)){
@@ -132,10 +130,19 @@ function migrateLegacyBoardFormat(board){
         const d = days[Math.min(idx,4)];
         r.entries[ymd(d)] = val;
       });
-      delete r.values; r.weeks && delete r.weeks;
-    } else { r.entries = r.entries || {}; }
+      delete r.values; 
+      r.weeks && delete r.weeks;
+    } else {
+      r.entries = r.entries || {};
+    }
+
+    // ➕ ГАРАНТИЯ: у каждой строки есть reporting с дефолтами
+    if (!r.reporting) {
+      r.reporting = { daily: false, weekly: true, monthly: true };
+    }
   });
 }
+
 function migrateIfNeeded(raw){
   if (raw && raw.departments){
     for (const [dept, obj] of Object.entries(raw.departments)){
@@ -567,17 +574,19 @@ function renderTable(){
     const thName = document.createElement("th");
     thName.className = "col-kpi editable";
     thName.textContent = row.name;
-    thName.addEventListener("contextmenu", (e) => {
-      e.preventDefault();
-      if (!canManageKpi(currentDepartment)) {
-        alert("Недостаточно прав");
-        return;
-      }
-      openContextMenu([
-        {label:"Rename", action: () => inlineRenameRowCell(thName, rIdx)},
-        {label:"Delete", action: () => deleteRow(rIdx), danger:true},
-      ], e.pageX, e.pageY);
-    });
+   thName.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+  if (!canManageKpi(currentDepartment)) {
+    alert("Недостаточно прав");
+    return;
+  }
+  openContextMenu([
+    {label:"Rename", action: () => inlineRenameRowCell(thName, rIdx)},
+    {label:"Reporting Type", action: () => openReportingTypeModal(rIdx)},
+    {label:"Delete", action: () => deleteRow(rIdx), danger:true},
+  ], e.pageX, e.pageY);
+});
+
     tr.appendChild(thName);
 
     // Target — RMB edit (только менеджеры KPI)
@@ -801,6 +810,55 @@ function renderUsers() {
         ], e.pageX, e.pageY);
       });
     }
+function openReportingTypeModal(rIdx){
+  const row = orgData.departments[currentDepartment].users[currentUser].board.rows[rIdx];
+  const current = row.reporting || { daily:true, weekly:true, monthly:true };
+
+  const root = ensureModalRoot();
+  root.classList.add("active");
+  root.style.display = "flex";
+  root.innerHTML = `
+    <div class="modal-overlay"></div>
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <div class="modal-header">
+        <h3>Reporting Type</h3>
+        <button class="modal-x" title="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <label><input type="checkbox" id="chkDaily" ${current.daily ? "checked":""}/> Daily</label><br>
+        <label><input type="checkbox" id="chkWeekly" ${current.weekly ? "checked":""}/> Weekly</label><br>
+        <label><input type="checkbox" id="chkMonthly" ${current.monthly ? "checked":""}/> Monthly</label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="btnCancel">Cancel</button>
+        <button class="btn primary" id="btnSave">Save</button>
+      </div>
+    </div>
+  `;
+  document.body.style.overflow = "hidden";
+
+  const overlay = root.querySelector(".modal-overlay");
+  const btnX = root.querySelector(".modal-x");
+  const btnCancel = root.querySelector("#btnCancel");
+  const btnSave = root.querySelector("#btnSave");
+
+  const chkDaily = root.querySelector("#chkDaily");
+  const chkWeekly = root.querySelector("#chkWeekly");
+  const chkMonthly = root.querySelector("#chkMonthly");
+
+  btnSave.onclick = () => {
+    row.reporting = {
+      daily: chkDaily.checked,
+      weekly: chkWeekly.checked,
+      monthly: chkMonthly.checked
+    };
+    save();
+    renderTable();
+    closeModal();
+  };
+
+  [btnCancel, btnX, overlay].forEach(el => el.addEventListener("click", closeModal));
+}
 
     container.appendChild(btn);
   });
@@ -1370,6 +1428,7 @@ if (window.__FB_AUTH && window.__FB_AUTH.currentUser) {
 } else {
   window.showLoginScreen && window.showLoginScreen();
 }
+
 
 
 
