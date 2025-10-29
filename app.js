@@ -1443,3 +1443,20 @@ if (window.__FB_AUTH && window.__FB_AUTH.currentUser) {
 } else {
   window.showLoginScreen && window.showLoginScreen();
 }
+// Theme toggle + persist
+(function(){
+  const key = 'kpi-theme';
+  const saved = localStorage.getItem(key);
+  if (saved === 'dark') document.body.classList.replace('light','dark');
+
+  const btn = document.getElementById('themeToggle');
+  if (btn){
+    btn.addEventListener('click', ()=>{
+      const isDark = document.body.classList.contains('dark');
+      document.body.classList.toggle('dark', !isDark);
+      document.body.classList.toggle('light', isDark);
+      localStorage.setItem(key, isDark ? 'light' : 'dark');
+    });
+  }
+})();
+
