@@ -117,6 +117,8 @@ function defaultBoard(){
     ]
   };
 }
+let __unsubRT = null;
+let __isLocalSave = false;
 
 // ---------- Firestore realtime globals ----------
 function migrateLegacyBoardFormat(board){
@@ -1428,6 +1430,7 @@ if (window.__FB_AUTH && window.__FB_AUTH.currentUser) {
 } else {
   window.showLoginScreen && window.showLoginScreen();
 }
+
 
 
 
