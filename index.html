@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>KPI Board</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#131722" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>KPI Board</h1>
+  </header>
+
+  <main>
+    <aside class="side">
+      <div class="group">
+        <button id="addKpi">Добавить KPI</button>
+        <button id="addWeek">Добавить неделю</button>
+        <button id="delRow">Удалить строку</button>
+      </div>
+    </aside>
+
+    <section class="grid-wrap">
+      <table id="kpiTable">
+        <thead>
+          <tr id="theadRow">
+            <th class="col-kpi">KPI name</th>
+            <th class="col-target">Target</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+
+      <footer class="usersbar">
+        <div id="users"></div>
+        <div class="addUser">
+          <input id="newUserName" placeholder="Добавить имя..." />
+          <button id="addUser">+</button>
+        </div>
+      </footer>
+    </section>
+  </main>
+
+  <!-- ==== Firebase + Auth + Firestore ==== -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import {
+      getAuth, onAuthStateChanged, signInWithEmailAndPassword,
+      createUserWithEmailAndPassword, signOut
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+    import {
+      getFirestore, doc, getDoc, setDoc, onSnapshot, enableIndexedDbPersistence
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCb92dCbGD4H_YHPGt9SSPukDc7zlk9CpU",
+      authDomain: "kpi-board-139b1.firebaseapp.com",
+      projectId: "kpi-board-139b1",
+      storageBucket: "kpi-board-139b1.firebasestorage.app",
+      messagingSenderId: "805537122913",
+      appId: "1:805537122913:web:69457a3a36173f5720b820"
+    };
+
+    const app  = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db   = getFirestore(app);
+
+    enableIndexedDbPersistence(db).catch((err) => {
+      console.warn("Persistence unavailable:", err);
+    });
+
+    // --- Определяем роли ---
+    const DEPARTMENTS = [ "Administration", "Accounting", "Dispatching" ];
+    const POSITIONS_BY_DEPT = {
+      "Administration": [
+        "Director","Team Leader","Driver Evaluator","Capacity Planner","Driver Manager","Driver Administrator"
+      ],
+      "Accounting": ["Team Leader","Manager","Payroll"],
+      "Dispatching": ["Team Leader","Dispo FTL","Dispo XTL/ODC"]
+    };
+    const DIRECTOR_POSITIONS = ["Director"];
+    const LEADER_POSITIONS   = ["Team Leader"];
+
+    function roleFromPosition(position){
+      if (DIRECTOR_POSITIONS.includes(position)) return "director";
+      if (LEADER_POSITIONS.includes(position))   return "leader";
+      return "member";
+    }
+
+    window.__FB_AUTH = auth;
+    window.__FB_DB   = db;
+    window.__fbDoc    = doc;
+    window.__fbGetDoc = getDoc;
+    window.__fbSetDoc = setDoc;
+    window.__fbSnap   = onSnapshot;
+    window.__fbLogout = async () => { try { await signOut(auth); } catch(e){ alert("Logout error: "+e.message); } };
+
+    // ==== Login/Register UI ====
+    window.showLoginScreen = function(){
+      if (document.querySelector('#authBox')) return;
+      const box = document.createElement('div');
+      box.id = 'authBox';
+      box.style = "position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:10000;background:rgba(0,0,0,0.7)";
+      box.innerHTML = `
+        <div style="width:440px;background:#10151d;border-radius:12px;padding:20px;color:#eee;box-shadow:0 0 20px rgba(0,0,0,0.5)">
+          <h3>KPI Board — Login / Register</h3>
+          <input id="authFirst"  type="text" placeholder="First name" style="width:100%;margin-top:5px;padding:8px;border-radius:8px;background:#0f1824;border:1px solid #333;color:#eee"/>
+          <input id="authLast"   type="text" placeholder="Last name"  style="width:100%;margin-top:5px;padding:8px;border-radius:8px;background:#0f1824;border:1px solid #333;color:#eee"/>
+          <select id="authDept"  style="width:100%;margin-top:5px;padding:8px;border-radius:8px;background:#0f1824;border:1px solid #333;color:#eee"></select>
+          <select id="authPos"   style="width:100%;margin-top:5px;padding:8px;border-radius:8px;background:#0f1824;border:1px solid #333;color:#eee"></select>
+          <input id="authEmail"  type="email" placeholder="Email"     style="width:100%;margin-top:5px;padding:8px;border-radius:8px;background:#0f1824;border:1px solid #333;color:#eee"/>
+          <input id="authPass"   type="password" placeholder="Password" style="width:100%;margin-top:5px;padding:8px;border-radius:8px;background:#0f1824;border:1px solid #333;color:#eee"/>
+          <div style="display:flex;justify-content:space-between;margin-top:10px">
+            <button id="btnLogin">Login</button>
+            <button id="btnRegister">Register</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(box);
+
+      const selDept = box.querySelector("#authDept");
+      const selPos  = box.querySelector("#authPos");
+      selDept.innerHTML = `<option value="" disabled selected>Select department</option>` +
+        DEPARTMENTS.map(d => `<option value="${d}">${d}</option>`).join("");
+      selPos.innerHTML = `<option value="" disabled selected>Select position</option>`;
+      selDept.onchange = () => {
+        const list = POSITIONS_BY_DEPT[selDept.value] || [];
+        selPos.innerHTML = `<option value="" disabled selected>Select position</option>` +
+          list.map(p => `<option value="${p}">${p}</option>`).join("");
+      };
+
+      // Register
+      box.querySelector("#btnRegister").onclick = async () => {
+        const first = box.querySelector("#authFirst").value.trim();
+        const last  = box.querySelector("#authLast").value.trim();
+        const dept  = selDept.value;
+        const pos   = selPos.value;
+        const email = box.querySelector("#authEmail").value.trim();
+        const pass  = box.querySelector("#authPass").value;
+        if (!first || !last || !dept || !pos || !email || !pass) { alert("Fill all fields"); return; }
+
+        try {
+          const cred = await createUserWithEmailAndPassword(auth, email, pass);
+          const uid = cred.user.uid;
+          const displayName = `${first} ${last}`;
+          const role = roleFromPosition(pos);
+          await setDoc(doc(db, "users", uid), { displayName, email, department: dept, position: pos, role });
+          window.currentUserProfile = { displayName, email, department: dept, position: pos, role };
+          window.hideLoginScreen && window.hideLoginScreen();
+          window.dispatchEvent(new CustomEvent('fbAuthChanged', { detail: auth.currentUser }));
+        } catch(err) {
+          alert("Ошибка регистрации: " + err.message);
+        }
+      };
+
+      // Login
+      box.querySelector("#btnLogin").onclick = async () => {
+        const email = box.querySelector("#authEmail").value.trim();
+        const pass  = box.querySelector("#authPass").value;
+        try {
+          const cred = await signInWithEmailAndPassword(auth, email, pass);
+          const snap = await getDoc(doc(db, "users", cred.user.uid));
+          if (snap.exists()) window.currentUserProfile = snap.data();
+          window.hideLoginScreen && window.hideLoginScreen();
+          window.dispatchEvent(new CustomEvent('fbAuthChanged', { detail: auth.currentUser }));
+        } catch(err) {
+          alert("Ошибка входа: " + err.message);
+        }
+      };
+    };
+
+    window.hideLoginScreen = () => { const el = document.querySelector("#authBox"); if (el) el.remove(); };
+
+    async function loadUserProfile(uid){
+      try {
+        const snap = await getDoc(doc(db, "users", uid));
+        if (snap.exists()) window.currentUserProfile = snap.data();
+        else window.currentUserProfile = null;
+      } catch(e) {
+        console.error("Ошибка загрузки профиля:", e);
+        window.currentUserProfile = null;
+      }
+    }
+
+    onAuthStateChanged(auth, async (user)=>{
+      if (user) await loadUserProfile(user.uid);
+      else window.currentUserProfile = null;
+      window.dispatchEvent(new CustomEvent('fbAuthChanged', { detail: user || null }));
+    });
+  </script>
+
+  <!-- Основной JS -->
+  <script src="app.js"></script>
+</body>
+</html>
