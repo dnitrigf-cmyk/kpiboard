@@ -73,20 +73,14 @@ function isoWeeksInMonth(monthDate){
   }
   return weeks;
 }
-function monthsFrom(startDate, count) {
+function monthsFrom(startDate, count){
   const list = [];
-  for (let i = 0; i < count; i++) {
+  for(let i=0;i<count;i++){
     const d = addMonths(startDate, i);
-    list.push({
-      date: firstOfMonth(d),
-      label: d
-        .toLocaleString('en-US', { month: 'long', year: 'numeric' })
-        .replace(/^./, c => c.toUpperCase()) // делает первую букву заглавной
-    });
+    list.push({date:firstOfMonth(d), label:d.toLocaleString('ru-RU',{month:'long',year:'numeric'})});
   }
   return list;
 }
-
 
 // ---------- Number helpers ----------
 function parseNumber(s) {
@@ -111,16 +105,16 @@ function averageNumbers(arr){
 function defaultBoard(){
   return {
     rows: [
-      { name: "Contract (%)", target: ">= 71 %", entries: {}, reporting: { daily: true, weekly: true, monthly: true } },
-      { name: "Spot (%)",     target: "<= 29 %", entries: {}, reporting: { daily: true, weekly: true, monthly: true } },
-      { name: "Shipments",    target: ">= 9,200", entries: {}, reporting: { daily: true, weekly: true, monthly: true } }
+      { name: "Contract (%)", target: ">= 71 %", entries: {} },
+      { name: "Spot (%)",     target: "<= 29 %", entries: {} },
+      { name: "Shipments",    target: ">= 9,200", entries: {} }
     ]
   };
 }
+// ---------- Firestore realtime globals ----------
 let __unsubRT = null;
 let __isLocalSave = false;
 
-// ---------- Firestore realtime globals ----------
 function migrateLegacyBoardFormat(board){
   board.rows.forEach(r=>{
     if (Array.isArray(r.values)){
@@ -132,19 +126,10 @@ function migrateLegacyBoardFormat(board){
         const d = days[Math.min(idx,4)];
         r.entries[ymd(d)] = val;
       });
-      delete r.values; 
-      r.weeks && delete r.weeks;
-    } else {
-      r.entries = r.entries || {};
-    }
-
-    // ➕ ГАРАНТИЯ: у каждой строки есть reporting с дефолтами
-    if (!r.reporting) {
-      r.reporting = { daily: false, weekly: true, monthly: true };
-    }
+      delete r.values; r.weeks && delete r.weeks;
+    } else { r.entries = r.entries || {}; }
   });
 }
-
 function migrateIfNeeded(raw){
   if (raw && raw.departments){
     for (const [dept, obj] of Object.entries(raw.departments)){
@@ -250,35 +235,9 @@ async function ensureUserFromProfile(){
   const prof = window.currentUserProfile;
   if (!prof) return;
 
-  // ❗ super — не создаём карточку пользователя в orgData, чтобы быть невидимым
-  if (prof.role === "super") {
-    // гарантируем, что в orgData хоть кто-то есть, чтобы было что смотреть/редактировать
-    if (!Object.keys(orgData.departments).length) {
-      orgData.departments["General"] = { users: { "User 1": { title:"", board: defaultBoard() } } };
-      currentDepartment = "General";
-      currentUser = "User 1";
-      save();
-    } else {
-      // если уже есть департаменты — просто ставим первый попавшийся как текущий
-      const firstDept = Object.keys(orgData.departments)[0];
-      currentDepartment = firstDept;
-      const users = Object.keys(orgData.departments[firstDept].users);
-      if (!users.length) {
-        orgData.departments[firstDept].users["User 1"] = { title:"", board: defaultBoard() };
-        currentUser = "User 1";
-        save();
-      } else {
-        currentUser = users[0];
-      }
-    }
-    return; // всё, супер остаётся невидимым
-  }
-
-  // ---- обычная логика для всех остальных ролей ----
   const dept   = prof.department;
   const name   = prof.displayName;
   const title  = prof.position || prof.title || "";
-
   // гарантия существования департамента
   orgData.departments[dept] = orgData.departments[dept] || { users: {} };
 
@@ -295,12 +254,8 @@ async function ensureUserFromProfile(){
       node.title = title;
       save();
     }
-    // текущее выделение
-    currentDepartment = dept;
-    currentUser = name;
   }
 }
-
 
 // ---------- Roles / Permissions ----------
 function isSuper(){ return (window.currentUserProfile?.role === "super"); }
@@ -308,33 +263,22 @@ function isSuper(){ return (window.currentUserProfile?.role === "super"); }
 function canManageDept(targetDept){
   const prof = window.currentUserProfile;
   if (!prof) return false;
-  if (prof.role === "super")    return true;          // super — всё
-  if (prof.role === "director") return true;          // director — всё
-  if (prof.role === "leader" && prof.department === targetDept) return true; // лидер в своём депте
+  if (isSuper()) return true;
+  if (prof.role === "director") return true;
+  if (prof.role === "leader" && prof.department === targetDept) return true;
   return false; // member — нет прав
 }
-
 
 // редактирование значений KPI (дни) — своё, лидер в департаменте, директор/супер везде
 function canEditUser(targetDept, targetUserName){
   const prof = window.currentUserProfile;
   if (!prof) return false;
-
-  // Super — может всё
-  if (prof.role === "super") return true;
-
-  // Director — может всё
+  if (isSuper()) return true;
   if (prof.role === "director") return true;
-
-  // Team Leader — может в своём департаменте
   if (prof.role === "leader" && prof.department === targetDept) return true;
-
-  // Обычный — только сам себя в своём департаменте
   if (prof.role === "member" && prof.department === targetDept && targetUserName === prof.displayName) return true;
-
   return false;
 }
-
 
 // управление структурой KPI (добавить/переименовать/менять Target/удалять)
 function canManageKpi(targetDept){
@@ -576,19 +520,17 @@ function renderTable(){
     const thName = document.createElement("th");
     thName.className = "col-kpi editable";
     thName.textContent = row.name;
-   thName.addEventListener("contextmenu", (e) => {
-  e.preventDefault();
-  if (!canManageKpi(currentDepartment)) {
-    alert("Недостаточно прав");
-    return;
-  }
-  openContextMenu([
-    {label:"Rename", action: () => inlineRenameRowCell(thName, rIdx)},
-    {label:"Reporting Type", action: () => openReportingTypeModal(rIdx)},
-    {label:"Delete", action: () => deleteRow(rIdx), danger:true},
-  ], e.pageX, e.pageY);
-});
-
+    thName.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      if (!canManageKpi(currentDepartment)) {
+        alert("Недостаточно прав");
+        return;
+      }
+      openContextMenu([
+        {label:"Rename", action: () => inlineRenameRowCell(thName, rIdx)},
+        {label:"Delete", action: () => deleteRow(rIdx), danger:true},
+      ], e.pageX, e.pageY);
+    });
     tr.appendChild(thName);
 
     // Target — RMB edit (только менеджеры KPI)
@@ -812,55 +754,6 @@ function renderUsers() {
         ], e.pageX, e.pageY);
       });
     }
-function openReportingTypeModal(rIdx){
-  const row = orgData.departments[currentDepartment].users[currentUser].board.rows[rIdx];
-  const current = row.reporting || { daily:true, weekly:true, monthly:true };
-
-  const root = ensureModalRoot();
-  root.classList.add("active");
-  root.style.display = "flex";
-  root.innerHTML = `
-    <div class="modal-overlay"></div>
-    <div class="modal-card" role="dialog" aria-modal="true">
-      <div class="modal-header">
-        <h3>Reporting Type</h3>
-        <button class="modal-x" title="Close">×</button>
-      </div>
-      <div class="modal-body">
-        <label><input type="checkbox" id="chkDaily" ${current.daily ? "checked":""}/> Daily</label><br>
-        <label><input type="checkbox" id="chkWeekly" ${current.weekly ? "checked":""}/> Weekly</label><br>
-        <label><input type="checkbox" id="chkMonthly" ${current.monthly ? "checked":""}/> Monthly</label>
-      </div>
-      <div class="modal-actions">
-        <button class="btn ghost" id="btnCancel">Cancel</button>
-        <button class="btn primary" id="btnSave">Save</button>
-      </div>
-    </div>
-  `;
-  document.body.style.overflow = "hidden";
-
-  const overlay = root.querySelector(".modal-overlay");
-  const btnX = root.querySelector(".modal-x");
-  const btnCancel = root.querySelector("#btnCancel");
-  const btnSave = root.querySelector("#btnSave");
-
-  const chkDaily = root.querySelector("#chkDaily");
-  const chkWeekly = root.querySelector("#chkWeekly");
-  const chkMonthly = root.querySelector("#chkMonthly");
-
-  btnSave.onclick = () => {
-    row.reporting = {
-      daily: chkDaily.checked,
-      weekly: chkWeekly.checked,
-      monthly: chkMonthly.checked
-    };
-    save();
-    renderTable();
-    closeModal();
-  };
-
-  [btnCancel, btnX, overlay].forEach(el => el.addEventListener("click", closeModal));
-}
 
     container.appendChild(btn);
   });
@@ -928,7 +821,7 @@ function ensureAppMenuButton(headerEl){
       const menuItems = [
         {label:"Add User",       action: canManageDept(currentDepartment) ? addUserFromMenu : null},
         {label:"Add KPI",        action: canAddKpi(currentDepartment) ? addKpiFromMenu : null},
-        {label:"Add Department", action: (prof.role === "director" || prof.role === "super") ? openAddDeptModal : null},
+        {label:"Add Department", action: canManageDept(currentDepartment) ? openAddDeptModal : null},
         {label:"Logout",         action: ()=>window.__fbLogout && window.__fbLogout()},
       ].filter(i => i.action);
       openContextMenu(menuItems, r.right, r.bottom+6);
@@ -1430,8 +1323,4 @@ if (window.__FB_AUTH && window.__FB_AUTH.currentUser) {
 } else {
   window.showLoginScreen && window.showLoginScreen();
 }
-
-
-
-
 
